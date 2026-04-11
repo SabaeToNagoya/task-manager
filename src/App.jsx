@@ -49,6 +49,13 @@ const toDateStr = (y, m, d) => `${y}-${padStr(m + 1)}-${padStr(d)}`
 const today = new Date()
 const todayStr = toDateStr(today.getFullYear(), today.getMonth(), today.getDate())
 
+// 日付を「YYYY年M月D日」形式にフォーマット
+const fmtDate = (s) => {
+  const p = parseDate(s)
+  if (!p) return s || ''
+  return `${p.y}年${p.m + 1}月${p.d}日`
+}
+
 // ─────────────────────────────────────────────────────────────────
 // StatusBadge
 // ─────────────────────────────────────────────────────────────────
@@ -254,7 +261,7 @@ function SidePanel({ task, year, month, noteContent, hoursMap, onSaveNote, onSav
 // GanttChart — ドラッグ&ドロップ対応
 // ─────────────────────────────────────────────────────────────────
 function GanttChart({
-  tasks, year, month, selectedId,
+  tasks, year, month, selectedId, hasAnyTasks,
   onSelect, onEdit,
   dragId, dragOverId,
   onDragStart, onDragOver, onDrop, onDragEnd,
@@ -292,6 +299,11 @@ function GanttChart({
     return { left: startIdx * COL_W + 2, width: (endIdx - startIdx + 1) * COL_W - 4 }
   }
 
+  // 空メッセージ: タスク自体がないか、この月に該当タスクがないかで分岐
+  const emptyMessage = hasAnyTasks
+    ? 'この月に表示するタスクはありません。\n月を切り替えるか、検索でタスクを探してください。'
+    : 'タスクがありません。右上の「＋ タスク追加」から作成してください。'
+
   return (
     <div className="gantt-scroll">
       <div style={{ minWidth: NAME_W + dims * COL_W, width: 'max-content' }}>
@@ -318,7 +330,9 @@ function GanttChart({
         {/* タスク行 */}
         {tasks.length === 0 ? (
           <div className="gantt-empty">
-            タスクがありません。右上の「＋ タスク追加」から作成してください。
+            {emptyMessage.split('\n').map((line, i) => (
+              <span key={i}>{line}{i < emptyMessage.split('\n').length - 1 && <br />}</span>
+            ))}
           </div>
         ) : tasks.map(task => {
           const bar = getBar(task)
@@ -402,10 +416,23 @@ export default function App() {
 
   // ── 検索 ──
   const [searchQuery, setSearchQuery] = useState('')
+  const [showSearchResults, setShowSearchResults] = useState(false)
+  const searchContainerRef = useRef(null)
 
   // ── ドラッグ&ドロップ ──
   const [dragId,     setDragId]     = useState(null)
   const [dragOverId, setDragOverId] = useState(null)
+
+  // ── 検索結果の外クリックで閉じる ──
+  useEffect(() => {
+    const handleClickOutside = (e) => {
+      if (searchContainerRef.current && !searchContainerRef.current.contains(e.target)) {
+        setShowSearchResults(false)
+      }
+    }
+    document.addEventListener('mousedown', handleClickOutside)
+    return () => document.removeEventListener('mousedown', handleClickOutside)
+  }, [])
 
   // ── 起動時: タスク + 全メモ を読み込み ──
   useEffect(() => {
@@ -456,8 +483,21 @@ export default function App() {
   const currentHoursMap = allHours[currentHoursKey] || {}
   const noteContent     = notes[selectedId] || ''
 
-  // ── 検索フィルタ ──
-  const filteredTasks = searchQuery.trim()
+  // ── 当月表示フィルタ (ガントチャート用) ──
+  // 開始〜終了期間が当月と重なるタスクのみ表示
+  const monthVisibleTasks = tasks.filter(t => {
+    const ts = parseDate(t.start_date)
+    const te = parseDate(t.end_date)
+    if (!ts || !te) return false
+    // タスクが当月より後に始まる → 非表示
+    if (ts.y > year || (ts.y === year && ts.m > month)) return false
+    // タスクが当月より前に終わる → 非表示
+    if (te.y < year || (te.y === year && te.m < month)) return false
+    return true
+  })
+
+  // ── 検索 (全タスクを対象) ──
+  const searchResults = searchQuery.trim()
     ? tasks.filter(t => {
         const q = searchQuery.toLowerCase()
         return (
@@ -465,7 +505,19 @@ export default function App() {
           (notes[t.id] || '').toLowerCase().includes(q)
         )
       })
-    : tasks
+    : []
+
+  // 検索結果からタスクへジャンプ
+  const jumpToTask = (task) => {
+    const ts = parseDate(task.start_date)
+    if (ts) {
+      setYear(ts.y)
+      setMonth(ts.m)
+    }
+    setSelectedId(task.id)
+    setSearchQuery('')
+    setShowSearchResults(false)
+  }
 
   // ── ドラッグ&ドロップハンドラ ──
   const handleDragStart = (e, id) => {
@@ -594,18 +646,53 @@ export default function App() {
         </div>
 
         {/* 検索バー */}
-        <div className="search-wrap">
+        <div className="search-wrap" ref={searchContainerRef}>
           <span className="search-icon">🔍</span>
           <input
             className="search-input"
             type="search"
             placeholder="タスク・メモを検索…"
             value={searchQuery}
-            onChange={e => setSearchQuery(e.target.value)}
+            onChange={e => { setSearchQuery(e.target.value); setShowSearchResults(true) }}
+            onFocus={() => searchQuery && setShowSearchResults(true)}
+            onKeyDown={e => e.key === 'Escape' && setShowSearchResults(false)}
           />
           {searchQuery && (
-            <button className="search-clear" onClick={() => setSearchQuery('')}
+            <button className="search-clear"
+              onClick={() => { setSearchQuery(''); setShowSearchResults(false) }}
               aria-label="検索クリア">✕</button>
+          )}
+
+          {/* 検索結果ドロップダウン */}
+          {showSearchResults && searchQuery.trim() && (
+            <div className="search-dropdown">
+              <div className="search-dropdown-header">
+                {searchResults.length > 0
+                  ? `${searchResults.length} 件ヒット — クリックでジャンプ`
+                  : '該当するタスクはありません'}
+              </div>
+              {searchResults.map(task => {
+                const isInCurrentMonth = monthVisibleTasks.some(t => t.id === task.id)
+                const ts = parseDate(task.start_date)
+                return (
+                  <button key={task.id} className="search-result-item"
+                    onClick={() => jumpToTask(task)}>
+                    <StatusBadge status={task.status} />
+                    <span className="search-result-name">{task.name}</span>
+                    <span className="search-result-date">
+                      {fmtDate(task.start_date)}〜{fmtDate(task.end_date)}
+                    </span>
+                    {isInCurrentMonth ? (
+                      <span className="search-result-tag current">表示中</span>
+                    ) : ts ? (
+                      <span className="search-result-tag jump">
+                        {ts.y}年{MONTH_JP[ts.m]} →
+                      </span>
+                    ) : null}
+                  </button>
+                )
+              })}
+            </div>
           )}
         </div>
 
@@ -623,16 +710,6 @@ export default function App() {
         </div>
       </header>
 
-      {/* 検索中バナー */}
-      {searchQuery && (
-        <div className="search-banner">
-          🔍 「{searchQuery}」の検索結果: {filteredTasks.length} 件
-          <button className="search-banner-clear" onClick={() => setSearchQuery('')}>
-            検索を解除
-          </button>
-        </div>
-      )}
-
       {/* ── メイン ── */}
       <div className="app-body">
         <div className="gantt-area">
@@ -645,7 +722,8 @@ export default function App() {
             <div className="loading"><span className="spin">⟳</span> 読み込み中…</div>
           ) : (
             <GanttChart
-              tasks={filteredTasks}
+              tasks={monthVisibleTasks}
+              hasAnyTasks={tasks.length > 0}
               year={year} month={month}
               selectedId={selectedId}
               onSelect={handleSelect}

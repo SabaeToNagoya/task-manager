@@ -124,30 +124,86 @@ html, body {
 }
 .search-clear:hover { color: var(--text); background: rgba(255,255,255,0.1); }
 
-/* 検索バナー */
-.search-banner {
+/* 検索結果ドロップダウン */
+.search-dropdown {
+  position: absolute;
+  top: calc(100% + 6px);
+  left: 0;
+  right: 0;
+  min-width: 320px;
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+  z-index: 500;
+  max-height: 340px;
+  overflow-y: auto;
+}
+
+.search-dropdown-header {
+  padding: 7px 12px;
+  font-size: 11px;
+  color: var(--text-muted);
+  border-bottom: 1px solid var(--border-light);
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.4px;
+  position: sticky;
+  top: 0;
+  background: var(--bg-card);
+}
+
+.search-result-item {
   display: flex;
   align-items: center;
-  gap: 12px;
-  padding: 6px 16px;
-  background: rgba(74,144,217,0.12);
-  border-bottom: 1px solid rgba(74,144,217,0.25);
-  font-size: 12px;
-  color: var(--primary);
+  gap: 8px;
+  width: 100%;
+  padding: 9px 12px;
+  background: none;
+  border: none;
+  border-bottom: 1px solid var(--border-light);
+  cursor: pointer;
+  text-align: left;
+  color: var(--text);
+  transition: background 0.1s;
+  font-size: 13px;
+}
+.search-result-item:last-child { border-bottom: none; }
+.search-result-item:hover { background: var(--bg-hover); }
+
+.search-result-name {
+  flex: 1;
+  font-size: 13px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
+}
+
+.search-result-date {
+  font-size: 11px;
+  color: var(--text-muted);
+  white-space: nowrap;
   flex-shrink: 0;
 }
-.search-banner-clear {
-  background: none;
-  border: 1px solid currentColor;
-  color: var(--primary);
+
+.search-result-tag {
+  font-size: 10px;
+  font-weight: 700;
+  padding: 2px 7px;
   border-radius: 4px;
-  padding: 2px 8px;
-  font-size: 11px;
-  cursor: pointer;
-  margin-left: auto;
-  opacity: 0.8;
+  white-space: nowrap;
+  flex-shrink: 0;
+  letter-spacing: 0.2px;
 }
-.search-banner-clear:hover { opacity: 1; }
+.search-result-tag.current {
+  background: rgba(74,222,128,0.15);
+  color: #4ADE80;
+}
+.search-result-tag.jump {
+  background: var(--primary-dim);
+  color: var(--primary);
+}
 
 /* ── メインボディ ── */
 .app-body {
