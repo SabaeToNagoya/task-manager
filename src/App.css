@@ -329,13 +329,34 @@ mark.search-hl {
 
 /* ── サイドパネル (デスクトップ) ── */
 .side-panel {
-  width: 300px;
+  width: 420px;
+  min-width: 220px;
+  max-width: 80vw;
   flex-shrink: 0;
   border-left: 1px solid var(--border);
   display: flex;
   flex-direction: column;
   overflow: hidden;
   background: var(--bg-card);
+  position: relative;
+}
+
+/* リサイズハンドル */
+.side-resize-handle {
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  width: 6px;
+  cursor: col-resize;
+  z-index: 10;
+  background: transparent;
+  transition: background 0.15s;
+}
+.side-resize-handle:hover,
+.side-resize-handle.dragging {
+  background: var(--primary);
+  opacity: 0.5;
 }
 
 /* =========================================================
@@ -1039,12 +1060,12 @@ mark.search-hl {
 
 /* iPad Pro / 大画面タブレット縦 */
 @media (min-width: 769px) and (max-width: 1024px) {
-  .side-panel { width: 260px; }
+  .side-panel { width: 320px; }
 }
 
 /* 大画面 */
 @media (min-width: 1400px) {
-  .side-panel { width: 320px; }
+  .side-panel { width: 480px; }
 }
 
 /* ダークモード (OSの設定に合わせる) */

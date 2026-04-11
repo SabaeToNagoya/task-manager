@@ -596,6 +596,49 @@ export default function App() {
   const [showSearchModal,   setShowSearchModal]   = useState(false)
   const searchContainerRef = useRef(null)
 
+  // ── サイドパネル リサイズ ──
+  const SIDE_WIDTH_KEY = 'sidePanelWidth'
+  const sidePanelRef   = useRef(null)
+  const resizingRef    = useRef(false)
+  const startXRef      = useRef(0)
+  const startWRef      = useRef(0)
+  const [sideWidth, setSideWidth] = useState(() => {
+    const saved = localStorage.getItem(SIDE_WIDTH_KEY)
+    return saved ? parseInt(saved, 10) : 420
+  })
+
+  const onResizeMouseDown = useCallback((e) => {
+    e.preventDefault()
+    resizingRef.current = true
+    startXRef.current   = e.clientX
+    startWRef.current   = sidePanelRef.current?.offsetWidth ?? sideWidth
+    document.body.style.cursor    = 'col-resize'
+    document.body.style.userSelect = 'none'
+    const handleRef = e.currentTarget
+    handleRef.classList.add('dragging')
+
+    const onMouseMove = (ev) => {
+      if (!resizingRef.current) return
+      const delta   = startXRef.current - ev.clientX   // 左ドラッグで拡大
+      const newWidth = Math.min(Math.max(startWRef.current + delta, 220), window.innerWidth * 0.8)
+      setSideWidth(newWidth)
+    }
+    const onMouseUp = () => {
+      resizingRef.current = false
+      document.body.style.cursor     = ''
+      document.body.style.userSelect = ''
+      handleRef.classList.remove('dragging')
+      setSideWidth(w => {
+        localStorage.setItem(SIDE_WIDTH_KEY, String(w))
+        return w
+      })
+      window.removeEventListener('mousemove', onMouseMove)
+      window.removeEventListener('mouseup',   onMouseUp)
+    }
+    window.addEventListener('mousemove', onMouseMove)
+    window.addEventListener('mouseup',   onMouseUp)
+  }, [sideWidth])
+
   // ── ドラッグ&ドロップ ──
   const [dragId,     setDragId]     = useState(null)
   const [dragOverId, setDragOverId] = useState(null)
@@ -911,7 +954,12 @@ export default function App() {
           )}
         </div>
 
-        <aside className="side-panel">
+        <aside
+          className="side-panel"
+          ref={sidePanelRef}
+          style={{ width: sideWidth }}
+        >
+          <div className="side-resize-handle" onMouseDown={onResizeMouseDown} />
           <SidePanel {...sidePanelProps} />
         </aside>
       </div>
