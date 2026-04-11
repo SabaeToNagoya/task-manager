@@ -24,10 +24,10 @@ const STATUS_CFG = {
 const DOW = ['日', '月', '火', '水', '木', '金', '土']
 const MONTH_JP = ['1月','2月','3月','4月','5月','6月','7月','8月','9月','10月','11月','12月']
 
-const COL_W   = 36   // 日付列の幅(px)
-const NAME_W  = 220  // タスク名列の幅(px)
-const ROW_H   = 46   // 行の高さ(px)
-const HEAD_H  = 52   // ヘッダー行の高さ(px)
+const COL_W  = 36
+const NAME_W = 220
+const ROW_H  = 46
+const HEAD_H = 52
 
 // ─────────────────────────────────────────────────────────────────
 // ユーティリティ
@@ -35,7 +35,6 @@ const HEAD_H  = 52   // ヘッダー行の高さ(px)
 const genId = () =>
   Date.now().toString(36) + Math.random().toString(36).slice(2)
 
-/** "YYYY-MM-DD" を { y, m(0-base), d } に変換 */
 const parseDate = (s) => {
   if (!s) return null
   const [y, m, d] = s.split('-').map(Number)
@@ -43,11 +42,8 @@ const parseDate = (s) => {
 }
 
 const daysInMonth = (y, m) => new Date(y, m + 1, 0).getDate()
-
 const dow = (y, m, d) => new Date(y, m, d).getDay()
-
 const padStr = (n) => String(n).padStart(2, '0')
-
 const toDateStr = (y, m, d) => `${y}-${padStr(m + 1)}-${padStr(d)}`
 
 const today = new Date()
@@ -66,7 +62,7 @@ function StatusBadge({ status }) {
 }
 
 // ─────────────────────────────────────────────────────────────────
-// TaskDialog — タスク追加・編集ダイアログ
+// TaskDialog
 // ─────────────────────────────────────────────────────────────────
 const DEFAULT_FORM = {
   name: '', start_date: todayStr, end_date: todayStr,
@@ -89,30 +85,21 @@ function TaskDialog({ task, onSave, onDelete, onClose }) {
     onSave({ ...(task || {}), ...form, progress: Number(form.progress) })
   }
 
-  const handleOverlay = (e) => { if (e.target === e.currentTarget) onClose() }
-
   return (
-    <div className="overlay" onClick={handleOverlay}>
+    <div className="overlay" onClick={e => e.target === e.currentTarget && onClose()}>
       <div className="dialog">
-        {/* ヘッダー */}
         <div className="dialog-head">
           <h2>{isNew ? '＋ タスクを追加' : 'タスクを編集'}</h2>
-          <button className="icon-btn" onClick={onClose} aria-label="閉じる">✕</button>
+          <button className="icon-btn" onClick={onClose}>✕</button>
         </div>
 
-        {/* タスク名 */}
         <div className="field">
           <label>タスク名</label>
-          <input
-            className="input"
-            value={form.name}
+          <input className="input" value={form.name}
             onChange={e => set('name', e.target.value)}
-            placeholder="例: デザイン作成"
-            autoFocus
-          />
+            placeholder="例: デザイン作成" autoFocus />
         </div>
 
-        {/* 日付 */}
         <div className="field-row">
           <div className="field">
             <label>開始日</label>
@@ -126,7 +113,6 @@ function TaskDialog({ task, onSave, onDelete, onClose }) {
           </div>
         </div>
 
-        {/* 進捗 */}
         <div className="field">
           <label>進捗: <span style={{ color: form.color, fontWeight: 700 }}>{form.progress}%</span></label>
           <input type="range" min="0" max="100" value={form.progress}
@@ -134,7 +120,6 @@ function TaskDialog({ task, onSave, onDelete, onClose }) {
             style={{ width: '100%', accentColor: form.color }} />
         </div>
 
-        {/* 状態 */}
         <div className="field">
           <label>状態</label>
           <select className="input" value={form.status}
@@ -143,7 +128,6 @@ function TaskDialog({ task, onSave, onDelete, onClose }) {
           </select>
         </div>
 
-        {/* バー色 */}
         <div className="field">
           <label>バー色</label>
           <div className="color-picker">
@@ -152,18 +136,14 @@ function TaskDialog({ task, onSave, onDelete, onClose }) {
                 className={`color-dot ${form.color === c.hex ? 'active' : ''}`}
                 style={{ background: c.hex }}
                 onClick={() => set('color', c.hex)}
-                title={c.name}
-                type="button"
-              />
+                title={c.name} type="button" />
             ))}
           </div>
         </div>
 
-        {/* フッター */}
         <div className="dialog-foot">
           {!isNew && (
-            <button className="btn btn-danger"
-              onClick={() => onDelete(task.id)}>削除</button>
+            <button className="btn btn-danger" onClick={() => onDelete(task.id)}>削除</button>
           )}
           <div style={{ display: 'flex', gap: 8, marginLeft: 'auto' }}>
             <button className="btn btn-ghost" onClick={onClose}>キャンセル</button>
@@ -178,7 +158,7 @@ function TaskDialog({ task, onSave, onDelete, onClose }) {
 }
 
 // ─────────────────────────────────────────────────────────────────
-// NotePanel — メモパネル
+// NotePanel
 // ─────────────────────────────────────────────────────────────────
 function NotePanel({ taskId, content, onChange }) {
   const [local, setLocal] = useState(content || '')
@@ -194,18 +174,15 @@ function NotePanel({ taskId, content, onChange }) {
 
   return (
     <div className="note-wrap">
-      <textarea
-        className="note-area"
-        value={local}
+      <textarea className="note-area" value={local}
         onChange={e => handleChange(e.target.value)}
-        placeholder="タスクに関するメモを入力… (自動保存)"
-      />
+        placeholder="タスクに関するメモを入力… (自動保存)" />
     </div>
   )
 }
 
 // ─────────────────────────────────────────────────────────────────
-// HoursPanel — 工数パネル
+// HoursPanel
 // ─────────────────────────────────────────────────────────────────
 function HoursPanel({ taskId, year, month, hoursMap, onSave }) {
   const days = daysInMonth(year, month)
@@ -219,20 +196,12 @@ function HoursPanel({ taskId, year, month, hoursMap, onSave }) {
         {Array.from({ length: days }, (_, i) => {
           const d = i + 1
           const w = dow(year, month, d)
-          const isSun = w === 0
-          const isSat = w === 6
           return (
-            <div key={d} className={`hours-row${isSun ? ' sun' : ''}${isSat ? ' sat' : ''}`}>
-              <span className="hours-label">
-                {padStr(d)}日({DOW[w]})
-              </span>
-              <input
-                className="hours-input"
-                type="number" min="0" max="24" step="0.5"
-                value={hoursMap?.[d] ?? ''}
-                placeholder="0"
-                onChange={e => onSave(d, e.target.value)}
-              />
+            <div key={d} className={`hours-row${w===0?' sun':''}${w===6?' sat':''}`}>
+              <span className="hours-label">{padStr(d)}日({DOW[w]})</span>
+              <input className="hours-input" type="number" min="0" max="24" step="0.5"
+                value={hoursMap?.[d] ?? ''} placeholder="0"
+                onChange={e => onSave(d, e.target.value)} />
               <span className="hours-unit">h</span>
             </div>
           )
@@ -243,7 +212,7 @@ function HoursPanel({ taskId, year, month, hoursMap, onSave }) {
 }
 
 // ─────────────────────────────────────────────────────────────────
-// SidePanel — 右サイドパネル (メモ + 工数タブ)
+// SidePanel
 // ─────────────────────────────────────────────────────────────────
 function SidePanel({ task, year, month, noteContent, hoursMap, onSaveNote, onSaveHours }) {
   const [tab, setTab] = useState('note')
@@ -259,25 +228,18 @@ function SidePanel({ task, year, month, noteContent, hoursMap, onSaveNote, onSav
 
   return (
     <div className="side-inner">
-      {/* タスク情報 */}
       <div className="side-task-bar">
         <StatusBadge status={task.status} />
         <span className="side-task-name" title={task.name}>{task.name}</span>
       </div>
-
-      {/* タブ切り替え */}
       <div className="tab-bar">
-        <button
-          className={`tab-btn ${tab === 'note' ? 'active' : ''}`}
-          onClick={() => setTab('note')}
-        >📝 メモ</button>
-        <button
-          className={`tab-btn ${tab === 'hours' ? 'active' : ''}`}
-          onClick={() => setTab('hours')}
-        >⏱ 工数</button>
+        <button className={`tab-btn ${tab==='note'?'active':''}`} onClick={() => setTab('note')}>
+          📝 メモ
+        </button>
+        <button className={`tab-btn ${tab==='hours'?'active':''}`} onClick={() => setTab('hours')}>
+          ⏱ 工数
+        </button>
       </div>
-
-      {/* コンテンツ */}
       <div className="tab-body">
         {tab === 'note'
           ? <NotePanel taskId={task.id} content={noteContent} onChange={onSaveNote} />
@@ -289,16 +251,20 @@ function SidePanel({ task, year, month, noteContent, hoursMap, onSaveNote, onSav
 }
 
 // ─────────────────────────────────────────────────────────────────
-// GanttChart — ガントチャート
+// GanttChart — ドラッグ&ドロップ対応
 // ─────────────────────────────────────────────────────────────────
-function GanttChart({ tasks, year, month, selectedId, onSelect, onEdit }) {
+function GanttChart({
+  tasks, year, month, selectedId,
+  onSelect, onEdit,
+  dragId, dragOverId,
+  onDragStart, onDragOver, onDrop, onDragEnd,
+}) {
   const dims = daysInMonth(year, month)
   const days = Array.from({ length: dims }, (_, i) => i + 1)
   const todayDay =
     today.getFullYear() === year && today.getMonth() === month
       ? today.getDate() : -1
 
-  /** タスクバーの left / width を計算 (px) */
   const getBar = (task) => {
     const ts = parseDate(task.start_date)
     const te = parseDate(task.end_date)
@@ -306,51 +272,40 @@ function GanttChart({ tasks, year, month, selectedId, onSelect, onEdit }) {
 
     let startIdx, endIdx
 
-    // startIdx: 月内での 0-based 開始インデックス
     if (ts.y < year || (ts.y === year && ts.m < month)) {
       startIdx = 0
     } else if (ts.y === year && ts.m === month) {
       startIdx = ts.d - 1
     } else {
-      return null // タスクが今月より後に開始
+      return null
     }
 
-    // endIdx: 月内での 0-based 終了インデックス
     if (te.y > year || (te.y === year && te.m > month)) {
       endIdx = dims - 1
     } else if (te.y === year && te.m === month) {
       endIdx = te.d - 1
     } else {
-      return null // タスクが今月より前に終了
+      return null
     }
 
     if (startIdx > endIdx) return null
-
-    return {
-      left:  startIdx * COL_W + 2,
-      width: (endIdx - startIdx + 1) * COL_W - 4,
-    }
+    return { left: startIdx * COL_W + 2, width: (endIdx - startIdx + 1) * COL_W - 4 }
   }
 
   return (
     <div className="gantt-scroll">
       <div style={{ minWidth: NAME_W + dims * COL_W, width: 'max-content' }}>
 
-        {/* ─── ヘッダー行 ─── */}
+        {/* ヘッダー行 */}
         <div className="gantt-head-row" style={{ height: HEAD_H }}>
-          <div
-            className="gantt-name-cell head-name"
-            style={{ width: NAME_W }}
-          >
+          <div className="gantt-name-cell head-name" style={{ width: NAME_W }}>
             タスク名 / 状態
           </div>
           {days.map(d => {
             const w = dow(year, month, d)
-            const isSun = w === 0, isSat = w === 6
-            const isToday = d === todayDay
             return (
               <div key={d}
-                className={`gantt-day-head${isSun?' sun':''}${isSat?' sat':''}${isToday?' today':''}`}
+                className={`gantt-day-head${w===0?' sun':''}${w===6?' sat':''}${d===todayDay?' today':''}`}
                 style={{ width: COL_W }}
               >
                 <span className="dnum">{d}</span>
@@ -360,7 +315,7 @@ function GanttChart({ tasks, year, month, selectedId, onSelect, onEdit }) {
           })}
         </div>
 
-        {/* ─── タスク行 ─── */}
+        {/* タスク行 */}
         {tasks.length === 0 ? (
           <div className="gantt-empty">
             タスクがありません。右上の「＋ タスク追加」から作成してください。
@@ -368,68 +323,54 @@ function GanttChart({ tasks, year, month, selectedId, onSelect, onEdit }) {
         ) : tasks.map(task => {
           const bar = getBar(task)
           const sel = task.id === selectedId
+          const isDragging = task.id === dragId
+          const isOver = task.id === dragOverId
+
           return (
             <div key={task.id}
-              className={`gantt-row${sel ? ' selected' : ''}`}
+              className={`gantt-row${sel?' selected':''}${isDragging?' dragging':''}${isOver?' drag-over':''}`}
               style={{ height: ROW_H }}
+              draggable
+              onDragStart={e => onDragStart(e, task.id)}
+              onDragOver={e => onDragOver(e, task.id)}
+              onDrop={e => onDrop(e, task.id)}
+              onDragEnd={onDragEnd}
               onClick={() => onSelect(task.id)}
             >
               {/* 左: タスク名 (sticky) */}
               <div
-                className={`gantt-name-cell${sel ? ' sel-name' : ''}`}
+                className={`gantt-name-cell${sel?' sel-name':''}`}
                 style={{ width: NAME_W }}
               >
+                {/* ドラッグハンドル */}
+                <span className="drag-handle" title="ドラッグして並び替え">⠿</span>
                 <StatusBadge status={task.status} />
                 <span className="task-text" title={task.name}>{task.name}</span>
-                <button
-                  className="edit-btn"
+                <button className="edit-btn"
                   onClick={e => { e.stopPropagation(); onEdit(task) }}
-                  title="編集"
-                  aria-label="タスクを編集"
-                >✎</button>
+                  title="編集">✎</button>
               </div>
 
               {/* 右: バーエリア */}
-              <div
-                className="bar-area"
-                style={{ width: dims * COL_W, height: ROW_H, position: 'relative' }}
-              >
-                {/* 列背景 (週末・今日) */}
+              <div className="bar-area"
+                style={{ width: dims * COL_W, height: ROW_H, position: 'relative' }}>
                 {days.map(d => {
                   const w = dow(year, month, d)
-                  const isSun = w === 0, isSat = w === 6
-                  const isToday = d === todayDay
+                  const isSun = w===0, isSat = w===6, isToday = d===todayDay
                   if (!isSun && !isSat && !isToday) return null
                   return (
                     <div key={d}
                       className={`col-bg${isSun?' sun-bg':''}${isSat?' sat-bg':''}${isToday?' today-bg':''}`}
-                      style={{ left: (d - 1) * COL_W, width: COL_W }}
-                    />
+                      style={{ left: (d-1)*COL_W, width: COL_W }} />
                   )
                 })}
-
-                {/* グリッド線 */}
                 {days.map(d => (
-                  <div key={d} className="col-line"
-                    style={{ left: d * COL_W - 1 }} />
+                  <div key={d} className="col-line" style={{ left: d*COL_W-1 }} />
                 ))}
-
-                {/* タスクバー */}
                 {bar && (
-                  <div
-                    className="task-bar"
-                    style={{
-                      left: bar.left,
-                      width: bar.width,
-                      background: task.color || '#4A90D9',
-                    }}
-                  >
-                    {/* 進捗オーバーレイ */}
-                    <div
-                      className="bar-progress"
-                      style={{ width: `${task.progress}%` }}
-                    />
-                    {/* 進捗テキスト */}
+                  <div className="task-bar"
+                    style={{ left: bar.left, width: bar.width, background: task.color || '#4A90D9' }}>
+                    <div className="bar-progress" style={{ width: `${task.progress}%` }} />
                     {bar.width > 28 && task.progress > 0 && (
                       <span className="bar-text">{task.progress}%</span>
                     )}
@@ -445,45 +386,51 @@ function GanttChart({ tasks, year, month, selectedId, onSelect, onEdit }) {
 }
 
 // ─────────────────────────────────────────────────────────────────
-// App — メインコンポーネント
+// App
 // ─────────────────────────────────────────────────────────────────
 export default function App() {
   const [year,  setYear]  = useState(today.getFullYear())
   const [month, setMonth] = useState(today.getMonth())
   const [tasks, setTasks] = useState([])
   const [selectedId, setSelectedId] = useState(null)
-  const [dialog, setDialog]   = useState(null)   // null | {} | task
-  const [notes, setNotes]     = useState({})      // taskId → string
-  const [allHours, setAllHours] = useState({})    // `${taskId}-${y}-${m}` → {day→h}
+  const [dialog, setDialog] = useState(null)
+  const [notes, setNotes]   = useState({})
+  const [allHours, setAllHours] = useState({})
   const [loading, setLoading] = useState(true)
   const [showMobilePanel, setShowMobilePanel] = useState(false)
   const [error, setError] = useState(null)
 
-  // ── タスク読み込み ──
+  // ── 検索 ──
+  const [searchQuery, setSearchQuery] = useState('')
+
+  // ── ドラッグ&ドロップ ──
+  const [dragId,     setDragId]     = useState(null)
+  const [dragOverId, setDragOverId] = useState(null)
+
+  // ── 起動時: タスク + 全メモ を読み込み ──
   useEffect(() => {
     ;(async () => {
       setLoading(true)
-      const { data, error } = await supabase
-        .from('tasks')
-        .select('*')
-        .order('sort_order', { ascending: true })
-        .order('created_at', { ascending: true })
-      if (error) { setError(error.message); setLoading(false); return }
-      setTasks(data || [])
+
+      const [{ data: taskData, error: taskErr }, { data: noteData }] = await Promise.all([
+        supabase.from('tasks').select('*')
+          .order('sort_order', { ascending: true })
+          .order('created_at', { ascending: true }),
+        supabase.from('task_notes').select('task_id, content'),
+      ])
+
+      if (taskErr) { setError(taskErr.message); setLoading(false); return }
+
+      setTasks(taskData || [])
+
+      // 全メモを一括キャッシュ (検索に使う)
+      const noteMap = {}
+      noteData?.forEach(n => { noteMap[n.task_id] = n.content || '' })
+      setNotes(noteMap)
+
       setLoading(false)
     })()
   }, [])
-
-  // ── メモ読み込み ──
-  const loadNote = useCallback(async (id) => {
-    if (notes[id] !== undefined) return
-    const { data } = await supabase
-      .from('task_notes')
-      .select('content')
-      .eq('task_id', id)
-      .maybeSingle()
-    setNotes(n => ({ ...n, [id]: data?.content || '' }))
-  }, [notes])
 
   // ── 工数読み込み ──
   const hoursKey = (id, y, m) => `${id}-${y}-${m}`
@@ -493,21 +440,15 @@ export default function App() {
     if (allHours[key] !== undefined) return
     const start = toDateStr(y, m, 1)
     const end   = toDateStr(y, m, daysInMonth(y, m))
-    const { data } = await supabase
-      .from('task_hours')
-      .select('date, hours')
-      .eq('task_id', id)
-      .gte('date', start)
-      .lte('date', end)
+    const { data } = await supabase.from('task_hours').select('date, hours')
+      .eq('task_id', id).gte('date', start).lte('date', end)
     const map = {}
     data?.forEach(r => { map[Number(r.date.split('-')[2])] = r.hours })
     setAllHours(h => ({ ...h, [key]: map }))
   }, [allHours])
 
-  // 選択タスク or 月変更時にデータ取得
   useEffect(() => {
     if (!selectedId) return
-    loadNote(selectedId)
     loadHours(selectedId, year, month)
   }, [selectedId, year, month])
 
@@ -515,12 +456,64 @@ export default function App() {
   const currentHoursMap = allHours[currentHoursKey] || {}
   const noteContent     = notes[selectedId] || ''
 
+  // ── 検索フィルタ ──
+  const filteredTasks = searchQuery.trim()
+    ? tasks.filter(t => {
+        const q = searchQuery.toLowerCase()
+        return (
+          t.name.toLowerCase().includes(q) ||
+          (notes[t.id] || '').toLowerCase().includes(q)
+        )
+      })
+    : tasks
+
+  // ── ドラッグ&ドロップハンドラ ──
+  const handleDragStart = (e, id) => {
+    setDragId(id)
+    e.dataTransfer.effectAllowed = 'move'
+  }
+
+  const handleDragOver = (e, id) => {
+    e.preventDefault()
+    e.dataTransfer.dropEffect = 'move'
+    if (id !== dragId) setDragOverId(id)
+  }
+
+  const handleDrop = async (e, targetId) => {
+    e.preventDefault()
+    if (!dragId || dragId === targetId) {
+      setDragId(null); setDragOverId(null); return
+    }
+
+    const newTasks = [...tasks]
+    const fromIdx  = newTasks.findIndex(t => t.id === dragId)
+    const toIdx    = newTasks.findIndex(t => t.id === targetId)
+    const [moved]  = newTasks.splice(fromIdx, 1)
+    newTasks.splice(toIdx, 0, moved)
+
+    const updated = newTasks.map((t, i) => ({ ...t, sort_order: i }))
+    setTasks(updated)
+    setDragId(null)
+    setDragOverId(null)
+
+    // Supabase に sort_order を一括保存
+    await Promise.all(
+      updated.map(t =>
+        supabase.from('tasks').update({ sort_order: t.sort_order }).eq('id', t.id)
+      )
+    )
+  }
+
+  const handleDragEnd = () => {
+    setDragId(null)
+    setDragOverId(null)
+  }
+
   // ── メモ保存 ──
   const saveNote = async (content) => {
     if (!selectedId) return
     setNotes(n => ({ ...n, [selectedId]: content }))
-    await supabase
-      .from('task_notes')
+    await supabase.from('task_notes')
       .upsert({ task_id: selectedId, content }, { onConflict: 'task_id' })
   }
 
@@ -533,28 +526,20 @@ export default function App() {
       [currentHoursKey]: { ...currentHoursMap, [day]: h },
     }))
     const dateStr = toDateStr(year, month, day)
-    await supabase
-      .from('task_hours')
-      .upsert(
-        { task_id: selectedId, date: dateStr, hours: h },
-        { onConflict: 'task_id,date' }
-      )
+    await supabase.from('task_hours')
+      .upsert({ task_id: selectedId, date: dateStr, hours: h }, { onConflict: 'task_id,date' })
   }
 
   // ── タスク保存 ──
   const saveTask = async (taskData) => {
     if (!taskData.id) {
-      // 新規
       const newTask = { ...taskData, id: genId(), sort_order: tasks.length }
-      const { data, error } = await supabase
-        .from('tasks').insert(newTask).select().single()
+      const { data, error } = await supabase.from('tasks').insert(newTask).select().single()
       if (error) { alert('保存に失敗しました: ' + error.message); return }
       setTasks(t => [...t, data])
       setSelectedId(data.id)
     } else {
-      // 更新
-      const { data, error } = await supabase
-        .from('tasks').update(taskData).eq('id', taskData.id).select().single()
+      const { data, error } = await supabase.from('tasks').update(taskData).eq('id', taskData.id).select().single()
       if (error) { alert('保存に失敗しました: ' + error.message); return }
       setTasks(t => t.map(x => x.id === data.id ? data : x))
     }
@@ -573,16 +558,12 @@ export default function App() {
 
   // ── 月ナビ ──
   const prevMonth = () => {
-    if (month === 0) { setYear(y => y - 1); setMonth(11) }
-    else setMonth(m => m - 1)
+    if (month === 0) { setYear(y => y-1); setMonth(11) }
+    else setMonth(m => m-1)
   }
   const nextMonth = () => {
-    if (month === 11) { setYear(y => y + 1); setMonth(0) }
-    else setMonth(m => m + 1)
-  }
-  const goToday = () => {
-    setYear(today.getFullYear())
-    setMonth(today.getMonth())
+    if (month === 11) { setYear(y => y+1); setMonth(0) }
+    else setMonth(m => m+1)
   }
 
   const handleSelect = (id) => {
@@ -593,33 +574,46 @@ export default function App() {
   const selectedTask = tasks.find(t => t.id === selectedId) || null
 
   const sidePanelProps = {
-    task: selectedTask,
-    year, month,
-    noteContent,
-    hoursMap: currentHoursMap,
-    onSaveNote: saveNote,
-    onSaveHours: saveHours,
+    task: selectedTask, year, month,
+    noteContent, hoursMap: currentHoursMap,
+    onSaveNote: saveNote, onSaveHours: saveHours,
   }
 
   return (
     <div className="app">
       {/* ── ヘッダー ── */}
       <header className="app-header">
+        {/* 月ナビ */}
         <div className="month-nav">
-          <button className="nav-btn" onClick={prevMonth} aria-label="前月">‹</button>
-          <button className="nav-btn month-label" onClick={goToday}>
+          <button className="nav-btn" onClick={prevMonth}>‹</button>
+          <button className="nav-btn month-label"
+            onClick={() => { setYear(today.getFullYear()); setMonth(today.getMonth()) }}>
             {year}年 {MONTH_JP[month]}
           </button>
-          <button className="nav-btn" onClick={nextMonth} aria-label="次月">›</button>
+          <button className="nav-btn" onClick={nextMonth}>›</button>
         </div>
 
+        {/* 検索バー */}
+        <div className="search-wrap">
+          <span className="search-icon">🔍</span>
+          <input
+            className="search-input"
+            type="search"
+            placeholder="タスク・メモを検索…"
+            value={searchQuery}
+            onChange={e => setSearchQuery(e.target.value)}
+          />
+          {searchQuery && (
+            <button className="search-clear" onClick={() => setSearchQuery('')}
+              aria-label="検索クリア">✕</button>
+          )}
+        </div>
+
+        {/* 右ボタン群 */}
         <div className="header-right">
           {selectedTask && (
-            <button
-              className="btn btn-ghost panel-btn"
-              onClick={() => setShowMobilePanel(p => !p)}
-              aria-label="パネルを開く"
-            >
+            <button className="btn btn-ghost panel-btn"
+              onClick={() => setShowMobilePanel(p => !p)}>
               {showMobilePanel ? '✕' : '📋'}
             </button>
           )}
@@ -629,9 +623,18 @@ export default function App() {
         </div>
       </header>
 
+      {/* 検索中バナー */}
+      {searchQuery && (
+        <div className="search-banner">
+          🔍 「{searchQuery}」の検索結果: {filteredTasks.length} 件
+          <button className="search-banner-clear" onClick={() => setSearchQuery('')}>
+            検索を解除
+          </button>
+        </div>
+      )}
+
       {/* ── メイン ── */}
       <div className="app-body">
-        {/* ガントチャートエリア */}
         <div className="gantt-area">
           {error ? (
             <div className="err-msg">
@@ -639,37 +642,35 @@ export default function App() {
               <br /><small>Supabase の接続情報・RLS 設定をご確認ください</small>
             </div>
           ) : loading ? (
-            <div className="loading">
-              <span className="spin">⟳</span> 読み込み中…
-            </div>
+            <div className="loading"><span className="spin">⟳</span> 読み込み中…</div>
           ) : (
             <GanttChart
-              tasks={tasks}
-              year={year}
-              month={month}
+              tasks={filteredTasks}
+              year={year} month={month}
               selectedId={selectedId}
               onSelect={handleSelect}
               onEdit={task => setDialog(task)}
+              dragId={dragId}
+              dragOverId={dragOverId}
+              onDragStart={handleDragStart}
+              onDragOver={handleDragOver}
+              onDrop={handleDrop}
+              onDragEnd={handleDragEnd}
             />
           )}
         </div>
 
-        {/* サイドパネル (デスクトップ) */}
         <aside className="side-panel">
           <SidePanel {...sidePanelProps} />
         </aside>
       </div>
 
-      {/* モバイル用ボトムパネル */}
+      {/* モバイルパネル */}
       {showMobilePanel && selectedTask && (
-        <div className="mobile-panel" role="dialog" aria-modal="true">
+        <div className="mobile-panel">
           <div className="mobile-panel-bar">
             <span className="mobile-panel-title">{selectedTask.name}</span>
-            <button
-              className="icon-btn"
-              onClick={() => setShowMobilePanel(false)}
-              aria-label="パネルを閉じる"
-            >✕</button>
+            <button className="icon-btn" onClick={() => setShowMobilePanel(false)}>✕</button>
           </div>
           <div className="mobile-panel-body">
             <SidePanel {...sidePanelProps} />
@@ -679,12 +680,8 @@ export default function App() {
 
       {/* タスクダイアログ */}
       {dialog !== null && (
-        <TaskDialog
-          task={dialog}
-          onSave={saveTask}
-          onDelete={deleteTask}
-          onClose={() => setDialog(null)}
-        />
+        <TaskDialog task={dialog} onSave={saveTask}
+          onDelete={deleteTask} onClose={() => setDialog(null)} />
       )}
     </div>
   )
