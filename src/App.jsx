@@ -261,7 +261,7 @@ function SidePanel({ task, year, month, noteContent, hoursMap, onSaveNote, onSav
 // GanttChart — ドラッグ&ドロップ対応
 // ─────────────────────────────────────────────────────────────────
 function GanttChart({
-  tasks, year, month, selectedId, hasAnyTasks, searchQuery,
+  tasks, year, month, selectedId, hasAnyTasks,
   onSelect, onEdit,
   dragId, dragOverId,
   onDragStart, onDragOver, onDrop, onDragEnd,
@@ -299,12 +299,10 @@ function GanttChart({
     return { left: startIdx * COL_W + 2, width: (endIdx - startIdx + 1) * COL_W - 4 }
   }
 
-  // 空メッセージ: 検索中か、タスク自体がないか、この月に該当タスクがないかで分岐
-  const emptyMessage = searchQuery
-    ? `「${searchQuery}」に一致するタスクはありません`
-    : hasAnyTasks
-      ? 'この月に表示するタスクはありません。\n月を切り替えるか、検索でタスクを探してください。'
-      : 'タスクがありません。右上の「＋ タスク追加」から作成してください。'
+  // 空メッセージ: タスク自体がないか、この月に該当タスクがないかで分岐
+  const emptyMessage = hasAnyTasks
+    ? 'この月に表示するタスクはありません。\n月を切り替えるか、検索でタスクを探してください。'
+    : 'タスクがありません。右上の「＋ タスク追加」から作成してください。'
 
   return (
     <div className="gantt-scroll">
@@ -402,6 +400,66 @@ function GanttChart({
 }
 
 // ─────────────────────────────────────────────────────────────────
+// SearchModal — キーワード前後の文脈付き検索結果モーダル
+// ─────────────────────────────────────────────────────────────────
+function SearchModal({ query, results, notes, onJump, onClose }) {
+  // テキストからキーワード前後のスニペットを生成
+  const getSnippet = (text, q, ctxLen = 60) => {
+    if (!text || !q) return null
+    const lower = text.toLowerCase()
+    const idx = lower.indexOf(q.toLowerCase())
+    if (idx === -1) return null
+    const start = Math.max(0, idx - ctxLen)
+    const end   = Math.min(text.length, idx + q.length + ctxLen)
+    return {
+      before: (start > 0 ? '…' : '') + text.slice(start, idx),
+      match:  text.slice(idx, idx + q.length),
+      after:  text.slice(idx + q.length, end) + (end < text.length ? '…' : ''),
+    }
+  }
+
+  return (
+    <div className="overlay" onClick={e => e.target === e.currentTarget && onClose()}>
+      <div className="dialog search-modal">
+        <div className="dialog-head">
+          <h2>🔍 「{query}」の検索結果（{results.length}件）</h2>
+          <button className="icon-btn" onClick={onClose}>✕</button>
+        </div>
+
+        {results.length === 0 ? (
+          <div className="search-modal-empty">該当するタスクはありません</div>
+        ) : (
+          <div className="search-modal-list">
+            {results.map(task => {
+              const noteText   = notes[task.id] || ''
+              const noteSnip   = getSnippet(noteText, query)
+              return (
+                <button key={task.id} className="search-modal-item" onClick={() => onJump(task)}>
+                  <div className="search-modal-item-head">
+                    <StatusBadge status={task.status} />
+                    <span className="search-modal-item-name">{task.name}</span>
+                    <span className="search-modal-item-date">
+                      {fmtDate(task.start_date)}〜{fmtDate(task.end_date)}
+                    </span>
+                  </div>
+                  {noteSnip && (
+                    <p className="search-modal-snippet">
+                      {noteSnip.before}
+                      <mark className="search-highlight">{noteSnip.match}</mark>
+                      {noteSnip.after}
+                    </p>
+                  )}
+                </button>
+              )
+            })}
+          </div>
+        )}
+      </div>
+    </div>
+  )
+}
+
+// ─────────────────────────────────────────────────────────────────
 // App
 // ─────────────────────────────────────────────────────────────────
 export default function App() {
@@ -417,24 +475,12 @@ export default function App() {
   const [error, setError] = useState(null)
 
   // ── 検索 ──
-  const [searchQuery, setSearchQuery] = useState('')
-  const [showSearchResults, setShowSearchResults] = useState(false)
-  const searchContainerRef = useRef(null)
+  const [searchQuery,    setSearchQuery]    = useState('')
+  const [showSearchModal, setShowSearchModal] = useState(false)
 
   // ── ドラッグ&ドロップ ──
   const [dragId,     setDragId]     = useState(null)
   const [dragOverId, setDragOverId] = useState(null)
-
-  // ── 検索結果の外クリックで閉じる ──
-  useEffect(() => {
-    const handleClickOutside = (e) => {
-      if (searchContainerRef.current && !searchContainerRef.current.contains(e.target)) {
-        setShowSearchResults(false)
-      }
-    }
-    document.addEventListener('mousedown', handleClickOutside)
-    return () => document.removeEventListener('mousedown', handleClickOutside)
-  }, [])
 
   // ── 起動時: タスク + 全メモ を読み込み ──
   useEffect(() => {
@@ -524,7 +570,7 @@ export default function App() {
     }
     setSelectedId(task.id)
     setSearchQuery('')
-    setShowSearchResults(false)
+    setShowSearchModal(false)
   }
 
   // ── ドラッグ&ドロップハンドラ ──
@@ -654,53 +700,25 @@ export default function App() {
         </div>
 
         {/* 検索バー */}
-        <div className="search-wrap" ref={searchContainerRef}>
-          <span className="search-icon">🔍</span>
+        <div className="search-wrap">
+          <button className="search-icon-btn"
+            onClick={() => searchQuery.trim() && setShowSearchModal(true)}
+            title="検索（Enterでも開けます）">🔍</button>
           <input
             className="search-input"
             type="search"
-            placeholder="タスク・メモを検索…"
+            placeholder="タスク・メモを検索… [Enter]"
             value={searchQuery}
-            onChange={e => { setSearchQuery(e.target.value); setShowSearchResults(true) }}
-            onFocus={() => searchQuery && setShowSearchResults(true)}
-            onKeyDown={e => e.key === 'Escape' && setShowSearchResults(false)}
+            onChange={e => setSearchQuery(e.target.value)}
+            onKeyDown={e => {
+              if (e.key === 'Enter' && searchQuery.trim()) setShowSearchModal(true)
+              if (e.key === 'Escape') { setSearchQuery(''); setShowSearchModal(false) }
+            }}
           />
           {searchQuery && (
             <button className="search-clear"
-              onClick={() => { setSearchQuery(''); setShowSearchResults(false) }}
+              onClick={() => { setSearchQuery(''); setShowSearchModal(false) }}
               aria-label="検索クリア">✕</button>
-          )}
-
-          {/* 検索結果ドロップダウン */}
-          {showSearchResults && searchQuery.trim() && (
-            <div className="search-dropdown">
-              <div className="search-dropdown-header">
-                {searchResults.length > 0
-                  ? `${searchResults.length} 件ヒット — クリックでジャンプ`
-                  : '該当するタスクはありません'}
-              </div>
-              {searchResults.map(task => {
-                const isInCurrentMonth = monthVisibleTasks.some(t => t.id === task.id)
-                const ts = parseDate(task.start_date)
-                return (
-                  <button key={task.id} className="search-result-item"
-                    onClick={() => jumpToTask(task)}>
-                    <StatusBadge status={task.status} />
-                    <span className="search-result-name">{task.name}</span>
-                    <span className="search-result-date">
-                      {fmtDate(task.start_date)}〜{fmtDate(task.end_date)}
-                    </span>
-                    {isInCurrentMonth ? (
-                      <span className="search-result-tag current">表示中</span>
-                    ) : ts ? (
-                      <span className="search-result-tag jump">
-                        {ts.y}年{MONTH_JP[ts.m]} →
-                      </span>
-                    ) : null}
-                  </button>
-                )
-              })}
-            </div>
           )}
         </div>
 
@@ -732,33 +750,20 @@ export default function App() {
           ) : loading ? (
             <div className="loading"><span className="spin">⟳</span> 読み込み中…</div>
           ) : (
-            <>
-              {/* 検索中バナー */}
-              {searchQuery.trim() && (
-                <div className="search-banner">
-                  🔍 「{searchQuery}」の検索結果: {searchResults.length} 件
-                  <button className="search-banner-clear"
-                    onClick={() => { setSearchQuery(''); setShowSearchResults(false) }}>
-                    検索を解除
-                  </button>
-                </div>
-              )}
-              <GanttChart
-                tasks={searchQuery.trim() ? searchResults : monthVisibleTasks}
-                hasAnyTasks={tasks.length > 0}
-                searchQuery={searchQuery.trim()}
-                year={year} month={month}
-                selectedId={selectedId}
-                onSelect={handleSelect}
-                onEdit={task => setDialog(task)}
-                dragId={dragId}
-                dragOverId={dragOverId}
-                onDragStart={handleDragStart}
-                onDragOver={handleDragOver}
-                onDrop={handleDrop}
-                onDragEnd={handleDragEnd}
-              />
-            </>
+            <GanttChart
+              tasks={monthVisibleTasks}
+              hasAnyTasks={tasks.length > 0}
+              year={year} month={month}
+              selectedId={selectedId}
+              onSelect={handleSelect}
+              onEdit={task => setDialog(task)}
+              dragId={dragId}
+              dragOverId={dragOverId}
+              onDragStart={handleDragStart}
+              onDragOver={handleDragOver}
+              onDrop={handleDrop}
+              onDragEnd={handleDragEnd}
+            />
           )}
         </div>
 
@@ -778,6 +783,17 @@ export default function App() {
             <SidePanel {...sidePanelProps} />
           </div>
         </div>
+      )}
+
+      {/* 検索モーダル */}
+      {showSearchModal && (
+        <SearchModal
+          query={searchQuery}
+          results={searchResults}
+          notes={notes}
+          onJump={jumpToTask}
+          onClose={() => setShowSearchModal(false)}
+        />
       )}
 
       {/* タスクダイアログ */}
