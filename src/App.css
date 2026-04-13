@@ -124,112 +124,6 @@ html, body {
 }
 .search-clear:hover { color: var(--text); background: rgba(255,255,255,0.1); }
 
-/* ── 検索ハイライト ─────────────────────────── */
-mark.search-hl {
-  background: rgba(250, 204, 21, 0.35);
-  color: inherit;
-  border-radius: 2px;
-  padding: 0 1px;
-}
-
-/* ── 検索結果モーダル ────────────────────────── */
-.search-modal {
-  background: var(--bg-card);
-  border-radius: 14px;
-  width: 100%;
-  max-width: 680px;
-  max-height: 80vh;
-  display: flex;
-  flex-direction: column;
-  border: 1px solid var(--border);
-  box-shadow: var(--shadow);
-  animation: slideUp 0.2s ease;
-  overflow: hidden;
-}
-
-.search-modal-body {
-  flex: 1;
-  overflow-y: auto;
-  -webkit-overflow-scrolling: touch;
-}
-
-.search-modal-empty {
-  padding: 48px 24px;
-  text-align: center;
-  color: var(--text-muted);
-  font-size: 14px;
-}
-
-.search-modal-item {
-  padding: 14px 20px;
-  border-bottom: 1px solid var(--border-light);
-  cursor: pointer;
-  transition: background 0.1s;
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-}
-.search-modal-item:last-child { border-bottom: none; }
-.search-modal-item:hover { background: var(--bg-hover); }
-
-.search-modal-item-head {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  flex-wrap: wrap;
-}
-
-.search-modal-name {
-  flex: 1;
-  font-size: 14px;
-  font-weight: 600;
-  color: var(--text);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  min-width: 0;
-}
-
-.search-modal-context {
-  display: flex;
-  align-items: flex-start;
-  gap: 8px;
-  background: rgba(0,0,0,0.18);
-  border-radius: 6px;
-  padding: 9px 12px;
-  margin-top: 2px;
-}
-
-.search-ctx-icon {
-  flex-shrink: 0;
-  font-size: 13px;
-  line-height: 1.6;
-}
-
-.search-ctx-text {
-  font-size: 12px;
-  color: var(--text-muted);
-  line-height: 1.7;
-  word-break: break-all;
-}
-
-/* ドロップダウン下部の全件表示ボタン */
-.search-dropdown-detail-btn {
-  display: block;
-  width: 100%;
-  padding: 9px 12px;
-  background: rgba(74,144,217,0.08);
-  border: none;
-  border-top: 1px solid var(--border-light);
-  color: var(--primary);
-  font-size: 12px;
-  font-weight: 600;
-  cursor: pointer;
-  text-align: center;
-  transition: background 0.1s;
-}
-.search-dropdown-detail-btn:hover { background: rgba(74,144,217,0.16); }
-
 /* 検索結果ドロップダウン */
 .search-dropdown {
   position: absolute;
@@ -329,34 +223,13 @@ mark.search-hl {
 
 /* ── サイドパネル (デスクトップ) ── */
 .side-panel {
-  width: 420px;
-  min-width: 220px;
-  max-width: 80vw;
+  width: 300px;
   flex-shrink: 0;
   border-left: 1px solid var(--border);
   display: flex;
   flex-direction: column;
   overflow: hidden;
   background: var(--bg-card);
-  position: relative;
-}
-
-/* リサイズハンドル */
-.side-resize-handle {
-  position: absolute;
-  left: 0;
-  top: 0;
-  bottom: 0;
-  width: 6px;
-  cursor: col-resize;
-  z-index: 10;
-  background: transparent;
-  transition: background 0.15s;
-}
-.side-resize-handle:hover,
-.side-resize-handle.dragging {
-  background: var(--primary);
-  opacity: 0.5;
 }
 
 /* =========================================================
@@ -434,6 +307,15 @@ mark.search-hl {
   white-space: nowrap;
   flex-shrink: 0;
   letter-spacing: 0.3px;
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+/* リロードボタン */
+.reload-btn {
+  padding: 7px 9px;
+  font-size: 15px;
+  line-height: 1;
 }
 
 /* =========================================================
@@ -1060,12 +942,12 @@ mark.search-hl {
 
 /* iPad Pro / 大画面タブレット縦 */
 @media (min-width: 769px) and (max-width: 1024px) {
-  .side-panel { width: 320px; }
+  .side-panel { width: 260px; }
 }
 
 /* 大画面 */
 @media (min-width: 1400px) {
-  .side-panel { width: 480px; }
+  .side-panel { width: 320px; }
 }
 
 /* ダークモード (OSの設定に合わせる) */

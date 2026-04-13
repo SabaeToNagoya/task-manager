@@ -56,21 +56,6 @@ const fmtDate = (s) => {
   return `${p.y}年${p.m + 1}月${p.d}日`
 }
 
-// テキスト中のキーワード前後の文脈を抽出
-const getContext = (text, query, contextLen = 130) => {
-  if (!text || !query) return null
-  const lower = text.toLowerCase()
-  const idx = lower.indexOf(query.toLowerCase())
-  if (idx === -1) return null
-  const start = Math.max(0, idx - contextLen)
-  const end   = Math.min(text.length, idx + query.length + contextLen)
-  return {
-    before: (start > 0 ? '…' : '') + text.slice(start, idx),
-    match:  text.slice(idx, idx + query.length),
-    after:  text.slice(idx + query.length, end) + (end < text.length ? '…' : ''),
-  }
-}
-
 // ─────────────────────────────────────────────────────────────────
 // StatusBadge
 // ─────────────────────────────────────────────────────────────────
@@ -273,76 +258,7 @@ function SidePanel({ task, year, month, noteContent, hoursMap, onSaveNote, onSav
 }
 
 // ─────────────────────────────────────────────────────────────────
-// SearchModal — 検索結果を別画面で表示・文脈付き
-// ─────────────────────────────────────────────────────────────────
-function SearchModal({ query, results, notes, monthVisibleTaskIds, onJump, onClose }) {
-  const q = query.trim()
-
-  return (
-    <div className="overlay" onClick={e => e.target === e.currentTarget && onClose()}>
-      <div className="search-modal">
-        {/* ヘッダー */}
-        <div className="dialog-head">
-          <h2>🔍「{q}」— {results.length} 件</h2>
-          <button className="icon-btn" onClick={onClose}>✕</button>
-        </div>
-
-        {/* 結果リスト */}
-        <div className="search-modal-body">
-          {results.length === 0 ? (
-            <div className="search-modal-empty">該当するタスクはありません</div>
-          ) : results.map(task => {
-            const nameCtx = getContext(task.name, q)
-            const noteCtx = getContext(notes[task.id] || '', q)
-            const isVisible = monthVisibleTaskIds.has(task.id)
-            const ts = parseDate(task.start_date)
-
-            return (
-              <div key={task.id} className="search-modal-item" onClick={() => onJump(task)}>
-                {/* タスク情報行 */}
-                <div className="search-modal-item-head">
-                  <StatusBadge status={task.status} />
-                  <span className="search-modal-name">
-                    {nameCtx ? (
-                      <>
-                        {nameCtx.before}
-                        <mark className="search-hl">{nameCtx.match}</mark>
-                        {nameCtx.after}
-                      </>
-                    ) : task.name}
-                  </span>
-                  <span className="search-result-date">
-                    {fmtDate(task.start_date)}〜{fmtDate(task.end_date)}
-                  </span>
-                  {isVisible ? (
-                    <span className="search-result-tag current">表示中</span>
-                  ) : ts ? (
-                    <span className="search-result-tag jump">{ts.y}年{MONTH_JP[ts.m]} →</span>
-                  ) : null}
-                </div>
-
-                {/* メモの文脈 */}
-                {noteCtx && (
-                  <div className="search-modal-context">
-                    <span className="search-ctx-icon">📝</span>
-                    <span className="search-ctx-text">
-                      {noteCtx.before}
-                      <mark className="search-hl">{noteCtx.match}</mark>
-                      {noteCtx.after}
-                    </span>
-                  </div>
-                )}
-              </div>
-            )
-          })}
-        </div>
-      </div>
-    </div>
-  )
-}
-
-// ─────────────────────────────────────────────────────────────────
-// GanttChart — PC ドラッグ＆ドロップ + iOS 長押しタッチソート
+// GanttChart — ドラッグ&ドロップ対応
 // ─────────────────────────────────────────────────────────────────
 function GanttChart({
   tasks, year, month, selectedId, hasAnyTasks,
@@ -356,94 +272,6 @@ function GanttChart({
     today.getFullYear() === year && today.getMonth() === month
       ? today.getDate() : -1
 
-  // ── タッチソート用 ref ──────────────────────────────────────────
-  const ganttScrollRef = useRef(null)
-  const touchRef = useRef({
-    active: false,
-    dragId: null,
-    timer: null,
-    startX: 0,
-    startY: 0,
-    overId: null,
-  })
-  // 最新コールバックを ref で保持（stale closure 対策）
-  const cbRef = useRef({ onDragStart, onDragOver, onDrop, onDragEnd })
-  useEffect(() => {
-    cbRef.current = { onDragStart, onDragOver, onDrop, onDragEnd }
-  })
-
-  // non-passive touchmove を imperatively 登録（スクロール抑制のため）
-  useEffect(() => {
-    const container = ganttScrollRef.current
-    if (!container) return
-
-    const handleTouchMove = (e) => {
-      if (!touchRef.current.active) {
-        // 長押し前に指が動いたらキャンセル
-        const t = e.touches[0]
-        const dx = Math.abs(t.clientX - touchRef.current.startX)
-        const dy = Math.abs(t.clientY - touchRef.current.startY)
-        if (dx > 8 || dy > 8) clearTimeout(touchRef.current.timer)
-        return
-      }
-      e.preventDefault() // ドラッグ中はスクロールを止める
-
-      const t = e.touches[0]
-      // タッチ位置にある要素から data-task-id を探す
-      const el = document.elementFromPoint(t.clientX, t.clientY)
-      const row = el?.closest('[data-task-id]')
-      const targetId = row?.dataset.taskId
-      if (targetId && targetId !== touchRef.current.dragId) {
-        if (targetId !== touchRef.current.overId) {
-          touchRef.current.overId = targetId
-          cbRef.current.onDragOver(null, targetId)
-        }
-      }
-    }
-
-    container.addEventListener('touchmove', handleTouchMove, { passive: false })
-    return () => container.removeEventListener('touchmove', handleTouchMove)
-  }, [])
-
-  // タッチ開始
-  const handleTouchStart = (e, id) => {
-    const t = e.touches[0]
-    touchRef.current.startX  = t.clientX
-    touchRef.current.startY  = t.clientY
-    touchRef.current.overId  = null
-    touchRef.current.timer = setTimeout(() => {
-      touchRef.current.active = true
-      touchRef.current.dragId = id
-      cbRef.current.onDragStart(null, id)
-      navigator.vibrate?.(50) // 触覚フィードバック（対応端末のみ）
-    }, 500) // 500ms 長押しでドラッグ開始
-  }
-
-  // タッチ終了
-  const handleTouchEnd = (e) => {
-    clearTimeout(touchRef.current.timer)
-    if (touchRef.current.active) {
-      if (touchRef.current.overId) {
-        cbRef.current.onDrop(null, touchRef.current.overId)
-      } else {
-        cbRef.current.onDragEnd()
-      }
-    }
-    touchRef.current.active = false
-    touchRef.current.dragId = null
-    touchRef.current.overId = null
-  }
-
-  // タッチキャンセル
-  const handleTouchCancel = () => {
-    clearTimeout(touchRef.current.timer)
-    touchRef.current.active = false
-    touchRef.current.dragId = null
-    touchRef.current.overId = null
-    cbRef.current.onDragEnd()
-  }
-
-  // ── バー位置計算 ──────────────────────────────────────────────
   const getBar = (task) => {
     const ts = parseDate(task.start_date)
     const te = parseDate(task.end_date)
@@ -471,12 +299,13 @@ function GanttChart({
     return { left: startIdx * COL_W + 2, width: (endIdx - startIdx + 1) * COL_W - 4 }
   }
 
+  // 空メッセージ: タスク自体がないか、この月に該当タスクがないかで分岐
   const emptyMessage = hasAnyTasks
     ? 'この月に表示するタスクはありません。\n月を切り替えるか、検索でタスクを探してください。'
     : 'タスクがありません。右上の「＋ タスク追加」から作成してください。'
 
   return (
-    <div className="gantt-scroll" ref={ganttScrollRef}>
+    <div className="gantt-scroll">
       <div style={{ minWidth: NAME_W + dims * COL_W, width: 'max-content' }}>
 
         {/* ヘッダー行 */}
@@ -501,8 +330,8 @@ function GanttChart({
         {/* タスク行 */}
         {tasks.length === 0 ? (
           <div className="gantt-empty">
-            {emptyMessage.split('\n').map((line, i, arr) => (
-              <span key={i}>{line}{i < arr.length - 1 && <br />}</span>
+            {emptyMessage.split('\n').map((line, i) => (
+              <span key={i}>{line}{i < emptyMessage.split('\n').length - 1 && <br />}</span>
             ))}
           </div>
         ) : tasks.map(task => {
@@ -513,19 +342,13 @@ function GanttChart({
 
           return (
             <div key={task.id}
-              data-task-id={task.id}
               className={`gantt-row${sel?' selected':''}${isDragging?' dragging':''}${isOver?' drag-over':''}`}
               style={{ height: ROW_H }}
-              // PC: HTML5 ドラッグ
               draggable
               onDragStart={e => onDragStart(e, task.id)}
               onDragOver={e => onDragOver(e, task.id)}
               onDrop={e => onDrop(e, task.id)}
               onDragEnd={onDragEnd}
-              // iOS: タッチソート
-              onTouchStart={e => handleTouchStart(e, task.id)}
-              onTouchEnd={handleTouchEnd}
-              onTouchCancel={handleTouchCancel}
               onClick={() => onSelect(task.id)}
             >
               {/* 左: タスク名 (sticky) */}
@@ -533,6 +356,7 @@ function GanttChart({
                 className={`gantt-name-cell${sel?' sel-name':''}`}
                 style={{ width: NAME_W }}
               >
+                {/* ドラッグハンドル */}
                 <span className="drag-handle" title="ドラッグして並び替え">⠿</span>
                 <StatusBadge status={task.status} />
                 <span className="task-text" title={task.name}>{task.name}</span>
@@ -593,82 +417,44 @@ export default function App() {
   // ── 検索 ──
   const [searchQuery, setSearchQuery] = useState('')
   const [showSearchResults, setShowSearchResults] = useState(false)
-  const [showSearchModal,   setShowSearchModal]   = useState(false)
   const searchContainerRef = useRef(null)
-
-  // ── サイドパネル リサイズ ──
-  const SIDE_WIDTH_KEY = 'sidePanelWidth'
-  const sidePanelRef   = useRef(null)
-  const resizingRef    = useRef(false)
-  const startXRef      = useRef(0)
-  const startWRef      = useRef(0)
-  const [sideWidth, setSideWidth] = useState(() => {
-    const saved = localStorage.getItem(SIDE_WIDTH_KEY)
-    return saved ? parseInt(saved, 10) : 420
-  })
-
-  const onResizeMouseDown = useCallback((e) => {
-    e.preventDefault()
-    resizingRef.current = true
-    startXRef.current   = e.clientX
-    startWRef.current   = sidePanelRef.current?.offsetWidth ?? sideWidth
-    document.body.style.cursor    = 'col-resize'
-    document.body.style.userSelect = 'none'
-    const handleRef = e.currentTarget
-    handleRef.classList.add('dragging')
-
-    const onMouseMove = (ev) => {
-      if (!resizingRef.current) return
-      const delta   = startXRef.current - ev.clientX   // 左ドラッグで拡大
-      const newWidth = Math.min(Math.max(startWRef.current + delta, 220), window.innerWidth * 0.8)
-      setSideWidth(newWidth)
-    }
-    const onMouseUp = () => {
-      resizingRef.current = false
-      document.body.style.cursor     = ''
-      document.body.style.userSelect = ''
-      handleRef.classList.remove('dragging')
-      setSideWidth(w => {
-        localStorage.setItem(SIDE_WIDTH_KEY, String(w))
-        return w
-      })
-      window.removeEventListener('mousemove', onMouseMove)
-      window.removeEventListener('mouseup',   onMouseUp)
-    }
-    window.addEventListener('mousemove', onMouseMove)
-    window.addEventListener('mouseup',   onMouseUp)
-  }, [sideWidth])
 
   // ── ドラッグ&ドロップ ──
   const [dragId,     setDragId]     = useState(null)
   const [dragOverId, setDragOverId] = useState(null)
 
-  // ── 検索ドロップダウンの外クリックで閉じる ──
+  // ── 検索結果の外クリックで閉じる ──
   useEffect(() => {
-    const handler = (e) => {
+    const handleClickOutside = (e) => {
       if (searchContainerRef.current && !searchContainerRef.current.contains(e.target)) {
         setShowSearchResults(false)
       }
     }
-    document.addEventListener('mousedown', handler)
-    return () => document.removeEventListener('mousedown', handler)
+    document.addEventListener('mousedown', handleClickOutside)
+    return () => document.removeEventListener('mousedown', handleClickOutside)
   }, [])
 
   // ── 起動時: タスク + 全メモ を読み込み ──
   useEffect(() => {
     ;(async () => {
       setLoading(true)
+
       const [{ data: taskData, error: taskErr }, { data: noteData }] = await Promise.all([
         supabase.from('tasks').select('*')
           .order('sort_order', { ascending: true })
           .order('created_at', { ascending: true }),
         supabase.from('task_notes').select('task_id, content'),
       ])
+
       if (taskErr) { setError(taskErr.message); setLoading(false); return }
+
       setTasks(taskData || [])
+
+      // 全メモを一括キャッシュ (検索に使う)
       const noteMap = {}
       noteData?.forEach(n => { noteMap[n.task_id] = n.content || '' })
       setNotes(noteMap)
+
       setLoading(false)
     })()
   }, [])
@@ -697,16 +483,18 @@ export default function App() {
   const currentHoursMap = allHours[currentHoursKey] || {}
   const noteContent     = notes[selectedId] || ''
 
-  // ── 当月表示フィルタ ──
+  // ── 当月表示フィルタ (ガントチャート用) ──
+  // 開始〜終了期間が当月と重なるタスクのみ表示
   const monthVisibleTasks = tasks.filter(t => {
     const ts = parseDate(t.start_date)
     const te = parseDate(t.end_date)
     if (!ts || !te) return false
+    // タスクが当月より後に始まる → 非表示
     if (ts.y > year || (ts.y === year && ts.m > month)) return false
+    // タスクが当月より前に終わる → 非表示
     if (te.y < year || (te.y === year && te.m < month)) return false
     return true
   })
-  const monthVisibleTaskIds = new Set(monthVisibleTasks.map(t => t.id))
 
   // ── 検索 (全タスクを対象) ──
   const searchResults = searchQuery.trim()
@@ -716,44 +504,57 @@ export default function App() {
           t.name.toLowerCase().includes(q) ||
           (notes[t.id] || '').toLowerCase().includes(q)
         )
+      }).sort((a, b) => {
+        if (a.start_date < b.start_date) return -1
+        if (a.start_date > b.start_date) return 1
+        if (a.end_date < b.end_date) return -1
+        if (a.end_date > b.end_date) return 1
+        return 0
       })
     : []
 
   // 検索結果からタスクへジャンプ
   const jumpToTask = (task) => {
     const ts = parseDate(task.start_date)
-    if (ts) { setYear(ts.y); setMonth(ts.m) }
+    if (ts) {
+      setYear(ts.y)
+      setMonth(ts.m)
+    }
     setSelectedId(task.id)
     setSearchQuery('')
     setShowSearchResults(false)
-    setShowSearchModal(false)
   }
 
   // ── ドラッグ&ドロップハンドラ ──
   const handleDragStart = (e, id) => {
     setDragId(id)
-    if (e) e.dataTransfer.effectAllowed = 'move'
+    e.dataTransfer.effectAllowed = 'move'
   }
 
   const handleDragOver = (e, id) => {
-    if (e) { e.preventDefault(); e.dataTransfer.dropEffect = 'move' }
+    e.preventDefault()
+    e.dataTransfer.dropEffect = 'move'
     if (id !== dragId) setDragOverId(id)
   }
 
   const handleDrop = async (e, targetId) => {
-    if (e) e.preventDefault()
+    e.preventDefault()
     if (!dragId || dragId === targetId) {
       setDragId(null); setDragOverId(null); return
     }
+
     const newTasks = [...tasks]
     const fromIdx  = newTasks.findIndex(t => t.id === dragId)
     const toIdx    = newTasks.findIndex(t => t.id === targetId)
     const [moved]  = newTasks.splice(fromIdx, 1)
     newTasks.splice(toIdx, 0, moved)
+
     const updated = newTasks.map((t, i) => ({ ...t, sort_order: i }))
     setTasks(updated)
     setDragId(null)
     setDragOverId(null)
+
+    // Supabase に sort_order を一括保存
     await Promise.all(
       updated.map(t =>
         supabase.from('tasks').update({ sort_order: t.sort_order }).eq('id', t.id)
@@ -860,13 +661,7 @@ export default function App() {
             value={searchQuery}
             onChange={e => { setSearchQuery(e.target.value); setShowSearchResults(true) }}
             onFocus={() => searchQuery && setShowSearchResults(true)}
-            onKeyDown={e => {
-              if (e.key === 'Escape') { setShowSearchResults(false); return }
-              if (e.key === 'Enter' && searchQuery.trim()) {
-                setShowSearchResults(false)
-                setShowSearchModal(true)
-              }
-            }}
+            onKeyDown={e => e.key === 'Escape' && setShowSearchResults(false)}
           />
           {searchQuery && (
             <button className="search-clear"
@@ -874,7 +669,7 @@ export default function App() {
               aria-label="検索クリア">✕</button>
           )}
 
-          {/* クイック検索ドロップダウン */}
+          {/* 検索結果ドロップダウン */}
           {showSearchResults && searchQuery.trim() && (
             <div className="search-dropdown">
               <div className="search-dropdown-header">
@@ -883,7 +678,7 @@ export default function App() {
                   : '該当するタスクはありません'}
               </div>
               {searchResults.map(task => {
-                const isInCurrentMonth = monthVisibleTaskIds.has(task.id)
+                const isInCurrentMonth = monthVisibleTasks.some(t => t.id === task.id)
                 const ts = parseDate(task.start_date)
                 return (
                   <button key={task.id} className="search-result-item"
@@ -896,18 +691,13 @@ export default function App() {
                     {isInCurrentMonth ? (
                       <span className="search-result-tag current">表示中</span>
                     ) : ts ? (
-                      <span className="search-result-tag jump">{ts.y}年{MONTH_JP[ts.m]} →</span>
+                      <span className="search-result-tag jump">
+                        {ts.y}年{MONTH_JP[ts.m]} →
+                      </span>
                     ) : null}
                   </button>
                 )
               })}
-              {/* 全件表示ボタン */}
-              {searchResults.length > 0 && (
-                <button className="search-dropdown-detail-btn"
-                  onClick={() => { setShowSearchResults(false); setShowSearchModal(true) }}>
-                  📄 文脈付きで全件表示
-                </button>
-              )}
             </div>
           )}
         </div>
@@ -920,6 +710,9 @@ export default function App() {
               {showMobilePanel ? '✕' : '📋'}
             </button>
           )}
+          <button className="btn btn-ghost reload-btn"
+            onClick={() => window.location.reload()}
+            title="更新">🔄</button>
           <button className="btn btn-primary" onClick={() => setDialog({})}>
             ＋ タスク追加
           </button>
@@ -954,12 +747,7 @@ export default function App() {
           )}
         </div>
 
-        <aside
-          className="side-panel"
-          ref={sidePanelRef}
-          style={{ width: sideWidth }}
-        >
-          <div className="side-resize-handle" onMouseDown={onResizeMouseDown} />
+        <aside className="side-panel">
           <SidePanel {...sidePanelProps} />
         </aside>
       </div>
@@ -975,18 +763,6 @@ export default function App() {
             <SidePanel {...sidePanelProps} />
           </div>
         </div>
-      )}
-
-      {/* 検索結果モーダル（文脈付き全件表示） */}
-      {showSearchModal && (
-        <SearchModal
-          query={searchQuery}
-          results={searchResults}
-          notes={notes}
-          monthVisibleTaskIds={monthVisibleTaskIds}
-          onJump={jumpToTask}
-          onClose={() => setShowSearchModal(false)}
-        />
       )}
 
       {/* タスクダイアログ */}
