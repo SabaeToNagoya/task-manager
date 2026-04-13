@@ -261,7 +261,7 @@ function SidePanel({ task, year, month, noteContent, hoursMap, onSaveNote, onSav
 // GanttChart — ドラッグ&ドロップ対応
 // ─────────────────────────────────────────────────────────────────
 function GanttChart({
-  tasks, year, month, selectedId, hasAnyTasks,
+  tasks, year, month, selectedId, hasAnyTasks, searchQuery,
   onSelect, onEdit,
   dragId, dragOverId,
   onDragStart, onDragOver, onDrop, onDragEnd,
@@ -299,10 +299,12 @@ function GanttChart({
     return { left: startIdx * COL_W + 2, width: (endIdx - startIdx + 1) * COL_W - 4 }
   }
 
-  // 空メッセージ: タスク自体がないか、この月に該当タスクがないかで分岐
-  const emptyMessage = hasAnyTasks
-    ? 'この月に表示するタスクはありません。\n月を切り替えるか、検索でタスクを探してください。'
-    : 'タスクがありません。右上の「＋ タスク追加」から作成してください。'
+  // 空メッセージ: 検索中か、タスク自体がないか、この月に該当タスクがないかで分岐
+  const emptyMessage = searchQuery
+    ? `「${searchQuery}」に一致するタスクはありません`
+    : hasAnyTasks
+      ? 'この月に表示するタスクはありません。\n月を切り替えるか、検索でタスクを探してください。'
+      : 'タスクがありません。右上の「＋ タスク追加」から作成してください。'
 
   return (
     <div className="gantt-scroll">
@@ -730,20 +732,33 @@ export default function App() {
           ) : loading ? (
             <div className="loading"><span className="spin">⟳</span> 読み込み中…</div>
           ) : (
-            <GanttChart
-              tasks={monthVisibleTasks}
-              hasAnyTasks={tasks.length > 0}
-              year={year} month={month}
-              selectedId={selectedId}
-              onSelect={handleSelect}
-              onEdit={task => setDialog(task)}
-              dragId={dragId}
-              dragOverId={dragOverId}
-              onDragStart={handleDragStart}
-              onDragOver={handleDragOver}
-              onDrop={handleDrop}
-              onDragEnd={handleDragEnd}
-            />
+            <>
+              {/* 検索中バナー */}
+              {searchQuery.trim() && (
+                <div className="search-banner">
+                  🔍 「{searchQuery}」の検索結果: {searchResults.length} 件
+                  <button className="search-banner-clear"
+                    onClick={() => { setSearchQuery(''); setShowSearchResults(false) }}>
+                    検索を解除
+                  </button>
+                </div>
+              )}
+              <GanttChart
+                tasks={searchQuery.trim() ? searchResults : monthVisibleTasks}
+                hasAnyTasks={tasks.length > 0}
+                searchQuery={searchQuery.trim()}
+                year={year} month={month}
+                selectedId={selectedId}
+                onSelect={handleSelect}
+                onEdit={task => setDialog(task)}
+                dragId={dragId}
+                dragOverId={dragOverId}
+                onDragStart={handleDragStart}
+                onDragOver={handleDragOver}
+                onDrop={handleDrop}
+                onDragEnd={handleDragEnd}
+              />
+            </>
           )}
         </div>
 
