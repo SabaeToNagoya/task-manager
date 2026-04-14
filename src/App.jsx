@@ -1,5 +1,20 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
 import { supabase } from './supabase'
+import {
+  DndContext,
+  closestCenter,
+  PointerSensor,
+  TouchSensor,
+  useSensor,
+  useSensors,
+} from '@dnd-kit/core'
+import {
+  arrayMove,
+  SortableContext,
+  verticalListSortingStrategy,
+  useSortable,
+} from '@dnd-kit/sortable'
+import { CSS } from '@dnd-kit/utilities'
 
 // ─────────────────────────────────────────────────────────────────
 // 定数
@@ -54,6 +69,34 @@ const fmtDate = (s) => {
   const p = parseDate(s)
   if (!p) return s || ''
   return `${p.y}年${p.m + 1}月${p.d}日`
+}
+
+// ガントバーの位置・幅を計算（GanttChart・SortableGanttRow 共用）
+const getBar = (task, year, month, dims) => {
+  const ts = parseDate(task.start_date)
+  const te = parseDate(task.end_date)
+  if (!ts || !te) return null
+
+  let startIdx, endIdx
+
+  if (ts.y < year || (ts.y === year && ts.m < month)) {
+    startIdx = 0
+  } else if (ts.y === year && ts.m === month) {
+    startIdx = ts.d - 1
+  } else {
+    return null
+  }
+
+  if (te.y > year || (te.y === year && te.m > month)) {
+    endIdx = dims - 1
+  } else if (te.y === year && te.m === month) {
+    endIdx = te.d - 1
+  } else {
+    return null
+  }
+
+  if (startIdx > endIdx) return null
+  return { left: startIdx * COL_W + 2, width: (endIdx - startIdx + 1) * COL_W - 4 }
 }
 
 // ─────────────────────────────────────────────────────────────────
@@ -258,46 +301,97 @@ function SidePanel({ task, year, month, noteContent, hoursMap, onSaveNote, onSav
 }
 
 // ─────────────────────────────────────────────────────────────────
-// GanttChart — ドラッグ&ドロップ対応
+// SortableGanttRow — @dnd-kit による並び替え対応行
+// ─────────────────────────────────────────────────────────────────
+function SortableGanttRow({ task, bar, dims, days, year, month, todayDay, selectedId, onSelect, onEdit }) {
+  const {
+    attributes,
+    listeners,
+    setNodeRef,
+    transform,
+    transition,
+    isDragging,
+  } = useSortable({ id: task.id })
+
+  const sel = task.id === selectedId
+
+  const style = {
+    transform: CSS.Transform.toString(transform),
+    transition,
+    height: ROW_H,
+    opacity: isDragging ? 0.45 : 1,
+    position: 'relative',
+    zIndex: isDragging ? 1 : 'auto',
+  }
+
+  return (
+    <div
+      ref={setNodeRef}
+      style={style}
+      className={`gantt-row${sel ? ' selected' : ''}${isDragging ? ' dragging' : ''}`}
+      onClick={() => onSelect(task.id)}
+    >
+      {/* 左: タスク名 (sticky) */}
+      <div
+        className={`gantt-name-cell${sel ? ' sel-name' : ''}`}
+        style={{ width: NAME_W }}
+      >
+        {/* ドラッグハンドル: listeners をここにのみ付与 */}
+        <span
+          className="drag-handle"
+          title="ドラッグして並び替え"
+          {...attributes}
+          {...listeners}
+        >⠿</span>
+        <StatusBadge status={task.status} />
+        <span className="task-text" title={task.name}>{task.name}</span>
+        <button className="edit-btn"
+          onClick={e => { e.stopPropagation(); onEdit(task) }}
+          title="編集">✎</button>
+      </div>
+
+      {/* 右: バーエリア */}
+      <div className="bar-area"
+        style={{ width: dims * COL_W, height: ROW_H, position: 'relative' }}>
+        {days.map(d => {
+          const w = dow(year, month, d)
+          const isSun = w===0, isSat = w===6, isToday = d===todayDay
+          if (!isSun && !isSat && !isToday) return null
+          return (
+            <div key={d}
+              className={`col-bg${isSun?' sun-bg':''}${isSat?' sat-bg':''}${isToday?' today-bg':''}`}
+              style={{ left: (d-1)*COL_W, width: COL_W }} />
+          )
+        })}
+        {days.map(d => (
+          <div key={d} className="col-line" style={{ left: d*COL_W-1 }} />
+        ))}
+        {bar && (
+          <div className="task-bar"
+            style={{ left: bar.left, width: bar.width, background: task.color || '#4A90D9' }}>
+            <div className="bar-progress" style={{ width: `${task.progress}%` }} />
+            {bar.width > 28 && task.progress > 0 && (
+              <span className="bar-text">{task.progress}%</span>
+            )}
+          </div>
+        )}
+      </div>
+    </div>
+  )
+}
+
+// ─────────────────────────────────────────────────────────────────
+// GanttChart
 // ─────────────────────────────────────────────────────────────────
 function GanttChart({
   tasks, year, month, selectedId, hasAnyTasks,
   onSelect, onEdit,
-  dragId, dragOverId,
-  onDragStart, onDragOver, onDrop, onDragEnd,
 }) {
   const dims = daysInMonth(year, month)
   const days = Array.from({ length: dims }, (_, i) => i + 1)
   const todayDay =
     today.getFullYear() === year && today.getMonth() === month
       ? today.getDate() : -1
-
-  const getBar = (task) => {
-    const ts = parseDate(task.start_date)
-    const te = parseDate(task.end_date)
-    if (!ts || !te) return null
-
-    let startIdx, endIdx
-
-    if (ts.y < year || (ts.y === year && ts.m < month)) {
-      startIdx = 0
-    } else if (ts.y === year && ts.m === month) {
-      startIdx = ts.d - 1
-    } else {
-      return null
-    }
-
-    if (te.y > year || (te.y === year && te.m > month)) {
-      endIdx = dims - 1
-    } else if (te.y === year && te.m === month) {
-      endIdx = te.d - 1
-    } else {
-      return null
-    }
-
-    if (startIdx > endIdx) return null
-    return { left: startIdx * COL_W + 2, width: (endIdx - startIdx + 1) * COL_W - 4 }
-  }
 
   // 空メッセージ: タスク自体がないか、この月に該当タスクがないかで分岐
   const emptyMessage = hasAnyTasks
@@ -334,125 +428,24 @@ function GanttChart({
               <span key={i}>{line}{i < emptyMessage.split('\n').length - 1 && <br />}</span>
             ))}
           </div>
-        ) : tasks.map(task => {
-          const bar = getBar(task)
-          const sel = task.id === selectedId
-          const isDragging = task.id === dragId
-          const isOver = task.id === dragOverId
-
-          return (
-            <div key={task.id}
-              className={`gantt-row${sel?' selected':''}${isDragging?' dragging':''}${isOver?' drag-over':''}`}
-              style={{ height: ROW_H }}
-              draggable
-              onDragStart={e => onDragStart(e, task.id)}
-              onDragOver={e => onDragOver(e, task.id)}
-              onDrop={e => onDrop(e, task.id)}
-              onDragEnd={onDragEnd}
-              onClick={() => onSelect(task.id)}
-            >
-              {/* 左: タスク名 (sticky) */}
-              <div
-                className={`gantt-name-cell${sel?' sel-name':''}`}
-                style={{ width: NAME_W }}
-              >
-                {/* ドラッグハンドル */}
-                <span className="drag-handle" title="ドラッグして並び替え">⠿</span>
-                <StatusBadge status={task.status} />
-                <span className="task-text" title={task.name}>{task.name}</span>
-                <button className="edit-btn"
-                  onClick={e => { e.stopPropagation(); onEdit(task) }}
-                  title="編集">✎</button>
-              </div>
-
-              {/* 右: バーエリア */}
-              <div className="bar-area"
-                style={{ width: dims * COL_W, height: ROW_H, position: 'relative' }}>
-                {days.map(d => {
-                  const w = dow(year, month, d)
-                  const isSun = w===0, isSat = w===6, isToday = d===todayDay
-                  if (!isSun && !isSat && !isToday) return null
-                  return (
-                    <div key={d}
-                      className={`col-bg${isSun?' sun-bg':''}${isSat?' sat-bg':''}${isToday?' today-bg':''}`}
-                      style={{ left: (d-1)*COL_W, width: COL_W }} />
-                  )
-                })}
-                {days.map(d => (
-                  <div key={d} className="col-line" style={{ left: d*COL_W-1 }} />
-                ))}
-                {bar && (
-                  <div className="task-bar"
-                    style={{ left: bar.left, width: bar.width, background: task.color || '#4A90D9' }}>
-                    <div className="bar-progress" style={{ width: `${task.progress}%` }} />
-                    {bar.width > 28 && task.progress > 0 && (
-                      <span className="bar-text">{task.progress}%</span>
-                    )}
-                  </div>
-                )}
-              </div>
-            </div>
-          )
-        })}
-      </div>
-    </div>
-  )
-}
-
-// ─────────────────────────────────────────────────────────────────
-// SearchModal — キーワード前後の文脈付き検索結果モーダル
-// ─────────────────────────────────────────────────────────────────
-function SearchModal({ query, results, notes, onJump, onClose }) {
-  // テキストからキーワード前後のスニペットを生成
-  const getSnippet = (text, q, ctxLen = 60) => {
-    if (!text || !q) return null
-    const lower = text.toLowerCase()
-    const idx = lower.indexOf(q.toLowerCase())
-    if (idx === -1) return null
-    const start = Math.max(0, idx - ctxLen)
-    const end   = Math.min(text.length, idx + q.length + ctxLen)
-    return {
-      before: (start > 0 ? '…' : '') + text.slice(start, idx),
-      match:  text.slice(idx, idx + q.length),
-      after:  text.slice(idx + q.length, end) + (end < text.length ? '…' : ''),
-    }
-  }
-
-  return (
-    <div className="overlay" onClick={e => e.target === e.currentTarget && onClose()}>
-      <div className="dialog search-modal">
-        <div className="dialog-head">
-          <h2>🔍 「{query}」の検索結果（{results.length}件）</h2>
-          <button className="icon-btn" onClick={onClose}>✕</button>
-        </div>
-
-        {results.length === 0 ? (
-          <div className="search-modal-empty">該当するタスクはありません</div>
         ) : (
-          <div className="search-modal-list">
-            {results.map(task => {
-              const noteText   = notes[task.id] || ''
-              const noteSnip   = getSnippet(noteText, query)
-              return (
-                <button key={task.id} className="search-modal-item" onClick={() => onJump(task)}>
-                  <div className="search-modal-item-head">
-                    <StatusBadge status={task.status} />
-                    <span className="search-modal-item-name">{task.name}</span>
-                    <span className="search-modal-item-date">
-                      {fmtDate(task.start_date)}〜{fmtDate(task.end_date)}
-                    </span>
-                  </div>
-                  {noteSnip && (
-                    <p className="search-modal-snippet">
-                      {noteSnip.before}
-                      <mark className="search-highlight">{noteSnip.match}</mark>
-                      {noteSnip.after}
-                    </p>
-                  )}
-                </button>
-              )
-            })}
-          </div>
+          <SortableContext items={tasks.map(t => t.id)} strategy={verticalListSortingStrategy}>
+            {tasks.map(task => (
+              <SortableGanttRow
+                key={task.id}
+                task={task}
+                bar={getBar(task, year, month, dims)}
+                dims={dims}
+                days={days}
+                year={year}
+                month={month}
+                todayDay={todayDay}
+                selectedId={selectedId}
+                onSelect={onSelect}
+                onEdit={onEdit}
+              />
+            ))}
+          </SortableContext>
         )}
       </div>
     </div>
@@ -475,12 +468,32 @@ export default function App() {
   const [error, setError] = useState(null)
 
   // ── 検索 ──
-  const [searchQuery,    setSearchQuery]    = useState('')
-  const [showSearchModal, setShowSearchModal] = useState(false)
+  const [searchQuery, setSearchQuery] = useState('')
+  const [showSearchResults, setShowSearchResults] = useState(false)
+  const searchContainerRef = useRef(null)
 
-  // ── ドラッグ&ドロップ ──
-  const [dragId,     setDragId]     = useState(null)
-  const [dragOverId, setDragOverId] = useState(null)
+  // ── @dnd-kit センサー設定 ──
+  // PointerSensor: マウス・スタイラス（8px動いてから開始）
+  // TouchSensor: タッチ・iOS（200ms長押し後に開始、8px以内のズレは許容）
+  const sensors = useSensors(
+    useSensor(PointerSensor, {
+      activationConstraint: { distance: 8 },
+    }),
+    useSensor(TouchSensor, {
+      activationConstraint: { delay: 200, tolerance: 8 },
+    })
+  )
+
+  // ── 検索結果の外クリックで閉じる ──
+  useEffect(() => {
+    const handleClickOutside = (e) => {
+      if (searchContainerRef.current && !searchContainerRef.current.contains(e.target)) {
+        setShowSearchResults(false)
+      }
+    }
+    document.addEventListener('mousedown', handleClickOutside)
+    return () => document.removeEventListener('mousedown', handleClickOutside)
+  }, [])
 
   // ── 起動時: タスク + 全メモ を読み込み ──
   useEffect(() => {
@@ -532,14 +545,11 @@ export default function App() {
   const noteContent     = notes[selectedId] || ''
 
   // ── 当月表示フィルタ (ガントチャート用) ──
-  // 開始〜終了期間が当月と重なるタスクのみ表示
   const monthVisibleTasks = tasks.filter(t => {
     const ts = parseDate(t.start_date)
     const te = parseDate(t.end_date)
     if (!ts || !te) return false
-    // タスクが当月より後に始まる → 非表示
     if (ts.y > year || (ts.y === year && ts.m > month)) return false
-    // タスクが当月より前に終わる → 非表示
     if (te.y < year || (te.y === year && te.m < month)) return false
     return true
   })
@@ -552,12 +562,6 @@ export default function App() {
           t.name.toLowerCase().includes(q) ||
           (notes[t.id] || '').toLowerCase().includes(q)
         )
-      }).sort((a, b) => {
-        if (a.start_date < b.start_date) return -1
-        if (a.start_date > b.start_date) return 1
-        if (a.end_date < b.end_date) return -1
-        if (a.end_date > b.end_date) return 1
-        return 0
       })
     : []
 
@@ -570,37 +574,21 @@ export default function App() {
     }
     setSelectedId(task.id)
     setSearchQuery('')
-    setShowSearchModal(false)
+    setShowSearchResults(false)
   }
 
-  // ── ドラッグ&ドロップハンドラ ──
-  const handleDragStart = (e, id) => {
-    setDragId(id)
-    e.dataTransfer.effectAllowed = 'move'
-  }
+  // ── @dnd-kit ドラッグ終了ハンドラ ──
+  const handleDndEnd = async ({ active, over }) => {
+    if (!over || active.id === over.id) return
 
-  const handleDragOver = (e, id) => {
-    e.preventDefault()
-    e.dataTransfer.dropEffect = 'move'
-    if (id !== dragId) setDragOverId(id)
-  }
-
-  const handleDrop = async (e, targetId) => {
-    e.preventDefault()
-    if (!dragId || dragId === targetId) {
-      setDragId(null); setDragOverId(null); return
-    }
-
+    // monthVisibleTasks 内での並び替えを全タスクに反映
     const newTasks = [...tasks]
-    const fromIdx  = newTasks.findIndex(t => t.id === dragId)
-    const toIdx    = newTasks.findIndex(t => t.id === targetId)
-    const [moved]  = newTasks.splice(fromIdx, 1)
-    newTasks.splice(toIdx, 0, moved)
+    const fromIdx  = newTasks.findIndex(t => t.id === active.id)
+    const toIdx    = newTasks.findIndex(t => t.id === over.id)
+    const reordered = arrayMove(newTasks, fromIdx, toIdx)
+    const updated = reordered.map((t, i) => ({ ...t, sort_order: i }))
 
-    const updated = newTasks.map((t, i) => ({ ...t, sort_order: i }))
     setTasks(updated)
-    setDragId(null)
-    setDragOverId(null)
 
     // Supabase に sort_order を一括保存
     await Promise.all(
@@ -608,11 +596,6 @@ export default function App() {
         supabase.from('tasks').update({ sort_order: t.sort_order }).eq('id', t.id)
       )
     )
-  }
-
-  const handleDragEnd = () => {
-    setDragId(null)
-    setDragOverId(null)
   }
 
   // ── メモ保存 ──
@@ -700,25 +683,53 @@ export default function App() {
         </div>
 
         {/* 検索バー */}
-        <div className="search-wrap">
-          <button className="search-icon-btn"
-            onClick={() => searchQuery.trim() && setShowSearchModal(true)}
-            title="検索（Enterでも開けます）">🔍</button>
+        <div className="search-wrap" ref={searchContainerRef}>
+          <span className="search-icon">🔍</span>
           <input
             className="search-input"
             type="search"
-            placeholder="タスク・メモを検索… [Enter]"
+            placeholder="タスク・メモを検索…"
             value={searchQuery}
-            onChange={e => setSearchQuery(e.target.value)}
-            onKeyDown={e => {
-              if (e.key === 'Enter' && searchQuery.trim()) setShowSearchModal(true)
-              if (e.key === 'Escape') { setSearchQuery(''); setShowSearchModal(false) }
-            }}
+            onChange={e => { setSearchQuery(e.target.value); setShowSearchResults(true) }}
+            onFocus={() => searchQuery && setShowSearchResults(true)}
+            onKeyDown={e => e.key === 'Escape' && setShowSearchResults(false)}
           />
           {searchQuery && (
             <button className="search-clear"
-              onClick={() => { setSearchQuery(''); setShowSearchModal(false) }}
+              onClick={() => { setSearchQuery(''); setShowSearchResults(false) }}
               aria-label="検索クリア">✕</button>
+          )}
+
+          {/* 検索結果ドロップダウン */}
+          {showSearchResults && searchQuery.trim() && (
+            <div className="search-dropdown">
+              <div className="search-dropdown-header">
+                {searchResults.length > 0
+                  ? `${searchResults.length} 件ヒット — クリックでジャンプ`
+                  : '該当するタスクはありません'}
+              </div>
+              {searchResults.map(task => {
+                const isInCurrentMonth = monthVisibleTasks.some(t => t.id === task.id)
+                const ts = parseDate(task.start_date)
+                return (
+                  <button key={task.id} className="search-result-item"
+                    onClick={() => jumpToTask(task)}>
+                    <StatusBadge status={task.status} />
+                    <span className="search-result-name">{task.name}</span>
+                    <span className="search-result-date">
+                      {fmtDate(task.start_date)}〜{fmtDate(task.end_date)}
+                    </span>
+                    {isInCurrentMonth ? (
+                      <span className="search-result-tag current">表示中</span>
+                    ) : ts ? (
+                      <span className="search-result-tag jump">
+                        {ts.y}年{MONTH_JP[ts.m]} →
+                      </span>
+                    ) : null}
+                  </button>
+                )
+              })}
+            </div>
           )}
         </div>
 
@@ -730,9 +741,6 @@ export default function App() {
               {showMobilePanel ? '✕' : '📋'}
             </button>
           )}
-          <button className="btn btn-ghost reload-btn"
-            onClick={() => window.location.reload()}
-            title="更新">🔄</button>
           <button className="btn btn-primary" onClick={() => setDialog({})}>
             ＋ タスク追加
           </button>
@@ -750,20 +758,20 @@ export default function App() {
           ) : loading ? (
             <div className="loading"><span className="spin">⟳</span> 読み込み中…</div>
           ) : (
-            <GanttChart
-              tasks={monthVisibleTasks}
-              hasAnyTasks={tasks.length > 0}
-              year={year} month={month}
-              selectedId={selectedId}
-              onSelect={handleSelect}
-              onEdit={task => setDialog(task)}
-              dragId={dragId}
-              dragOverId={dragOverId}
-              onDragStart={handleDragStart}
-              onDragOver={handleDragOver}
-              onDrop={handleDrop}
-              onDragEnd={handleDragEnd}
-            />
+            <DndContext
+              sensors={sensors}
+              collisionDetection={closestCenter}
+              onDragEnd={handleDndEnd}
+            >
+              <GanttChart
+                tasks={monthVisibleTasks}
+                hasAnyTasks={tasks.length > 0}
+                year={year} month={month}
+                selectedId={selectedId}
+                onSelect={handleSelect}
+                onEdit={task => setDialog(task)}
+              />
+            </DndContext>
           )}
         </div>
 
@@ -783,17 +791,6 @@ export default function App() {
             <SidePanel {...sidePanelProps} />
           </div>
         </div>
-      )}
-
-      {/* 検索モーダル */}
-      {showSearchModal && (
-        <SearchModal
-          query={searchQuery}
-          results={searchResults}
-          notes={notes}
-          onJump={jumpToTask}
-          onClose={() => setShowSearchModal(false)}
-        />
       )}
 
       {/* タスクダイアログ */}
