@@ -3,7 +3,7 @@ import { supabase } from './supabase'
 import {
   DndContext,
   closestCenter,
-  PointerSensor,
+  MouseSensor,
   TouchSensor,
   useSensor,
   useSensors,
@@ -473,14 +473,15 @@ export default function App() {
   const searchContainerRef = useRef(null)
 
   // ── @dnd-kit センサー設定 ──
-  // PointerSensor: マウス・スタイラス（8px動いてから開始）
-  // TouchSensor: タッチ・iOS（200ms長押し後に開始、8px以内のズレは許容）
+  // MouseSensor: マウス専用（8px動いてから開始）
+  // TouchSensor: タッチ・iOS専用（250ms長押し後に開始、5px以内のズレは許容）
+  // ※ PointerSensor + TouchSensor の組み合わせは iOS で競合するため使わない
   const sensors = useSensors(
-    useSensor(PointerSensor, {
+    useSensor(MouseSensor, {
       activationConstraint: { distance: 8 },
     }),
     useSensor(TouchSensor, {
-      activationConstraint: { delay: 200, tolerance: 8 },
+      activationConstraint: { delay: 250, tolerance: 5 },
     })
   )
 

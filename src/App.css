@@ -337,6 +337,10 @@ html, body {
   border-bottom: 1px solid var(--border-light);
   cursor: pointer;
   transition: background 0.1s;
+  /* iOS long-press でテキスト選択・コールアウトが出ないよう全行に設定 */
+  -webkit-user-select: none;
+  user-select: none;
+  -webkit-touch-callout: none;
 }
 .gantt-row:hover   { background: var(--bg-hover); }
 .gantt-row.selected { background: var(--bg-sel); }
@@ -377,6 +381,8 @@ html, body {
   text-overflow: ellipsis;
   white-space: nowrap;
   color: var(--text);
+  -webkit-user-select: none;
+  user-select: none;
 }
 
 .edit-btn {
@@ -402,16 +408,31 @@ html, body {
   color: var(--text-muted);
   font-size: 14px;
   cursor: grab;
-  padding: 0 3px;
+  /* タッチ領域を広げて押しやすくする（見た目は変わらない） */
+  padding: 10px 5px;
+  margin: -10px -2px;
   opacity: 0.35;
   transition: opacity 0.15s;
   user-select: none;
   -webkit-user-select: none;
+  -webkit-touch-callout: none;
   touch-action: none;        /* iOS Safari がタッチを横取りしないよう必須 */
   line-height: 1;
 }
 .gantt-row:hover .drag-handle { opacity: 0.7; }
 .drag-handle:active { cursor: grabbing; }
+
+/* タッチデバイスではハンドルを常時表示・大きく */
+@media (hover: none) and (pointer: coarse) {
+  .drag-handle {
+    opacity: 0.55;
+    font-size: 17px;
+    padding: 12px 7px;
+    margin: -12px -4px;
+  }
+  /* 編集ボタンもタッチで常時表示 */
+  .gantt-row .edit-btn { opacity: 0.7; }
+}
 
 /* ドラッグ中の行 */
 .gantt-row.dragging {
