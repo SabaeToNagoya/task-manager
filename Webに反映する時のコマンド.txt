@@ -1,3 +1,4 @@
+cd Desktop\gantt-task-app
 git add .
 git commit -m "ドラッグ並び替え、検索機能改善、リロード追加"
 git push origin main
