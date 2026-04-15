@@ -342,13 +342,43 @@ html, body {
 
 /* ── サイドパネル (デスクトップ) ── */
 .side-panel {
-  width: 300px;
   flex-shrink: 0;
   border-left: 1px solid var(--border);
   display: flex;
-  flex-direction: column;
+  flex-direction: row;
   overflow: hidden;
   background: var(--bg-card);
+  position: relative;
+  min-width: 200px;
+  max-width: 600px;
+}
+
+/* リサイズハンドル */
+.side-resizer {
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 6px;
+  height: 100%;
+  cursor: col-resize;
+  z-index: 10;
+  background: transparent;
+  transition: background 0.15s;
+  flex-shrink: 0;
+}
+.side-resizer:hover,
+.side-resizer:active {
+  background: var(--primary);
+  opacity: 0.5;
+}
+
+/* リサイズハンドル分だけ右にずらす */
+.side-inner,
+.side-empty {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  margin-left: 6px;
 }
 
 /* =========================================================
@@ -409,6 +439,19 @@ html, body {
   -webkit-tap-highlight-color: transparent;
 }
 .icon-btn:hover { background: rgba(255,255,255,0.1); color: var(--text); }
+
+/* 更新ボタン */
+.refresh-btn {
+  font-size: 18px;
+  padding: 4px 8px;
+  transition: background 0.15s, transform 0.2s;
+}
+.refresh-btn:hover { color: var(--primary); }
+.refresh-btn.refreshing {
+  animation: spin 0.8s linear infinite;
+  opacity: 0.6;
+  cursor: not-allowed;
+}
 
 /* モバイル専用パネルボタン */
 .panel-btn { display: none; }
@@ -1073,15 +1116,7 @@ html, body {
   .app-header { gap: 6px; }
 }
 
-/* iPad Pro / 大画面タブレット縦 */
-@media (min-width: 769px) and (max-width: 1024px) {
-  .side-panel { width: 260px; }
-}
-
-/* 大画面 */
-@media (min-width: 1400px) {
-  .side-panel { width: 320px; }
-}
+/* iPad Pro / 大画面タブレット縦・大画面: 幅はJSのsideWidthで制御するためここでは指定しない */
 
 /* ダークモード (OSの設定に合わせる) */
 @media (prefers-color-scheme: dark) {

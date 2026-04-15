@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useCallback } from 'react'
+import { useState, useEffect, useRef, useCallback, useLayoutEffect } from 'react'
 import { supabase } from './supabase'
 import {
   DndContext,
@@ -533,8 +533,22 @@ export default function App() {
   const [notes, setNotes]   = useState({})
   const [allHours, setAllHours] = useState({})
   const [loading, setLoading] = useState(true)
+  const [refreshing, setRefreshing] = useState(false)
   const [showMobilePanel, setShowMobilePanel] = useState(false)
   const [error, setError] = useState(null)
+
+  // ── サイドパネル幅（localStorage で永続化）──
+  const SIDE_MIN = 200
+  const SIDE_MAX = 600
+  const SIDE_DEFAULT = 300
+  const [sideWidth, setSideWidth] = useState(() => {
+    const saved = localStorage.getItem('sideWidth')
+    const n = saved ? parseInt(saved, 10) : NaN
+    return (!isNaN(n) && n >= SIDE_MIN && n <= SIDE_MAX) ? n : SIDE_DEFAULT
+  })
+  const isResizing = useRef(false)
+  const resizeStartX = useRef(0)
+  const resizeStartW = useRef(0)
 
   // ── 検索 ──
   const [searchQuery,    setSearchQuery]    = useState('')
@@ -573,30 +587,39 @@ export default function App() {
     setShowSearchModal(true)
   }
 
-  // ── 起動時: タスク + 全メモ を読み込み ──
-  useEffect(() => {
-    ;(async () => {
-      setLoading(true)
+  // ── タスク + 全メモ を読み込む共通関数 ──
+  const loadData = useCallback(async ({ isRefresh = false } = {}) => {
+    if (isRefresh) setRefreshing(true)
+    else setLoading(true)
 
-      const [{ data: taskData, error: taskErr }, { data: noteData }] = await Promise.all([
-        supabase.from('tasks').select('*')
-          .order('sort_order', { ascending: true })
-          .order('created_at', { ascending: true }),
-        supabase.from('task_notes').select('task_id, content'),
-      ])
+    const [{ data: taskData, error: taskErr }, { data: noteData }] = await Promise.all([
+      supabase.from('tasks').select('*')
+        .order('sort_order', { ascending: true })
+        .order('created_at', { ascending: true }),
+      supabase.from('task_notes').select('task_id, content'),
+    ])
 
-      if (taskErr) { setError(taskErr.message); setLoading(false); return }
-
-      setTasks(taskData || [])
-
-      // 全メモを一括キャッシュ (検索に使う)
-      const noteMap = {}
-      noteData?.forEach(n => { noteMap[n.task_id] = n.content || '' })
-      setNotes(noteMap)
-
+    if (taskErr) {
+      setError(taskErr.message)
       setLoading(false)
-    })()
+      setRefreshing(false)
+      return
+    }
+
+    setTasks(taskData || [])
+    setError(null)
+
+    // 全メモを一括キャッシュ (検索に使う)
+    const noteMap = {}
+    noteData?.forEach(n => { noteMap[n.task_id] = n.content || '' })
+    setNotes(noteMap)
+
+    setLoading(false)
+    setRefreshing(false)
   }, [])
+
+  // ── 起動時: タスク + 全メモ を読み込み ──
+  useEffect(() => { loadData() }, [])
 
   // ── 工数読み込み ──
   const hoursKey = (id, y, m) => `${id}-${y}-${m}`
@@ -713,6 +736,45 @@ export default function App() {
     setDialog(null)
   }
 
+  // ── サイドパネル リサイズ処理 ──
+  const handleResizeStart = useCallback((e) => {
+    isResizing.current = true
+    resizeStartX.current = e.type === 'touchstart' ? e.touches[0].clientX : e.clientX
+    resizeStartW.current = sideWidth
+
+    const onMove = (ev) => {
+      if (!isResizing.current) return
+      const cx = ev.type === 'touchmove' ? ev.touches[0].clientX : ev.clientX
+      const delta = resizeStartX.current - cx   // 左にドラッグ → 幅が増える
+      const newW = Math.min(SIDE_MAX, Math.max(SIDE_MIN, resizeStartW.current + delta))
+      setSideWidth(newW)
+    }
+    const onUp = (ev) => {
+      if (!isResizing.current) return
+      isResizing.current = false
+      const cx = ev.type === 'touchend'
+        ? (ev.changedTouches[0]?.clientX ?? resizeStartX.current)
+        : ev.clientX
+      const delta = resizeStartX.current - cx
+      const newW = Math.min(SIDE_MAX, Math.max(SIDE_MIN, resizeStartW.current + delta))
+      setSideWidth(newW)
+      localStorage.setItem('sideWidth', String(newW))
+      document.removeEventListener('mousemove', onMove)
+      document.removeEventListener('mouseup',   onUp)
+      document.removeEventListener('touchmove', onMove)
+      document.removeEventListener('touchend',  onUp)
+      document.body.style.userSelect = ''
+      document.body.style.cursor = ''
+    }
+
+    document.addEventListener('mousemove', onMove)
+    document.addEventListener('mouseup',   onUp)
+    document.addEventListener('touchmove', onMove, { passive: true })
+    document.addEventListener('touchend',  onUp)
+    document.body.style.userSelect = 'none'
+    document.body.style.cursor = 'col-resize'
+  }, [sideWidth])
+
   // ── 月ナビ ──
   const prevMonth = () => {
     if (month === 0) { setYear(y => y-1); setMonth(11) }
@@ -782,6 +844,13 @@ export default function App() {
               {showMobilePanel ? '✕' : '📋'}
             </button>
           )}
+          <button
+            className={`icon-btn refresh-btn${refreshing ? ' refreshing' : ''}`}
+            onClick={() => loadData({ isRefresh: true })}
+            disabled={refreshing}
+            title="最新データに更新"
+            aria-label="更新"
+          >⟳</button>
           <button className="btn btn-primary" onClick={() => setDialog({})}>
             ＋ タスク追加
           </button>
@@ -816,7 +885,13 @@ export default function App() {
           )}
         </div>
 
-        <aside className="side-panel">
+        <aside className="side-panel" style={{ width: sideWidth }}>
+          <div
+            className="side-resizer"
+            onMouseDown={handleResizeStart}
+            onTouchStart={handleResizeStart}
+            title="ドラッグして幅を調整"
+          />
           <SidePanel {...sidePanelProps} />
         </aside>
       </div>
