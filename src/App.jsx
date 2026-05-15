@@ -182,43 +182,50 @@ function StatusBadge({ status }) {
 }
 
 // ─────────────────────────────────────────────────────────────────
-// ContextMenu — 右クリックメニュー
+// AddTypeModal — タスク追加時の種別選択
 // ─────────────────────────────────────────────────────────────────
-function ContextMenu({ x, y, task, onAddChild, onClose }) {
-  const ref = useRef(null)
-
-  // メニュー外クリック or Escape で閉じる
+function AddTypeModal({ selectedTask, canAddChild, onSelectMain, onSelectChild, onClose }) {
+  // Escape で閉じる
   useEffect(() => {
-    const onDown = (e) => {
-      if (ref.current && !ref.current.contains(e.target)) onClose()
-    }
     const onKey = (e) => { if (e.key === 'Escape') onClose() }
-    document.addEventListener('mousedown', onDown)
     document.addEventListener('keydown', onKey)
-    return () => {
-      document.removeEventListener('mousedown', onDown)
-      document.removeEventListener('keydown', onKey)
-    }
+    return () => document.removeEventListener('keydown', onKey)
   }, [onClose])
 
-  // 画面端へのはみ出し補正（簡易）
-  const menuW = 170
-  const menuH = 44
-  const adjustedX = Math.min(x, window.innerWidth  - menuW - 8)
-  const adjustedY = Math.min(y, window.innerHeight - menuH - 8)
-
   return (
-    <div
-      ref={ref}
-      className="context-menu"
-      style={{ left: adjustedX, top: adjustedY }}
-    >
-      <button
-        className="context-menu-item"
-        onClick={() => { onAddChild(task); onClose() }}
-      >
-        ＋ 子タスクを追加
-      </button>
+    <div className="overlay" onClick={e => e.target === e.currentTarget && onClose()}>
+      <div className="add-type-modal">
+        <div className="dialog-head">
+          <h2>タスクを追加</h2>
+          <button className="icon-btn" onClick={onClose}>✕</button>
+        </div>
+        <div className="add-type-choices">
+          <button className="add-type-card" onClick={onSelectMain}>
+            <span className="add-type-icon">📋</span>
+            <span className="add-type-label">メインタスクとして追加</span>
+            <span className="add-type-desc">最上位のタスクを新規作成します</span>
+          </button>
+          {canAddChild ? (
+            <button className="add-type-card add-type-card--child" onClick={onSelectChild}>
+              <span className="add-type-icon">↳</span>
+              <span className="add-type-label">
+                「{selectedTask.name}」の<br />子タスクとして追加
+              </span>
+              <span className="add-type-desc">選択中のタスクの配下に追加します</span>
+            </button>
+          ) : (
+            <div className="add-type-card add-type-card--disabled">
+              <span className="add-type-icon">↳</span>
+              <span className="add-type-label">子タスクとして追加</span>
+              <span className="add-type-desc">
+                {!selectedTask
+                  ? 'タスクを選択すると有効になります'
+                  : '子タスクにはさらに子タスクを追加できません'}
+              </span>
+            </div>
+          )}
+        </div>
+      </div>
     </div>
   )
 }
@@ -414,7 +421,7 @@ function SidePanel({ task, year, month, noteContent, hoursMap, onSaveNote, onSav
 // ─────────────────────────────────────────────────────────────────
 function SortableGanttRow({
   task, bar, dims, days, year, month, todayDay,
-  selectedId, onSelect, onEdit, onContextMenu,
+  selectedId, onSelect, onEdit,
   isParent, isChild, collapsed, onToggleCollapse,
 }) {
   const {
@@ -449,7 +456,6 @@ function SortableGanttRow({
         isChild   ? 'child-row'  : '',
       ].filter(Boolean).join(' ')}
       onClick={() => onSelect(task.id)}
-      onContextMenu={(e) => { e.preventDefault(); e.stopPropagation(); onContextMenu(e, task) }}
     >
       {/* 左: タスク名 (sticky) */}
       <div
@@ -523,7 +529,7 @@ function SortableGanttRow({
 function GanttChart({
   displayTasks, parentIds, childrenByParent, collapsedIds,
   year, month, selectedId, hasAnyTasks,
-  onSelect, onEdit, onContextMenu, onToggleCollapse,
+  onSelect, onEdit, onToggleCollapse,
 }) {
   const dims = daysInMonth(year, month)
   const days = Array.from({ length: dims }, (_, i) => i + 1)
@@ -595,7 +601,7 @@ function GanttChart({
                   selectedId={selectedId}
                   onSelect={onSelect}
                   onEdit={onEdit}
-                  onContextMenu={onContextMenu}
+
                   isParent={isParent}
                   isChild={isChild}
                   collapsed={collapsed}
@@ -626,21 +632,11 @@ export default function App() {
   const [showMobilePanel, setShowMobilePanel] = useState(false)
   const [error, setError] = useState(null)
 
-  // ── ガント行の右クリックでブラウザ標準メニューを抑制（ネイティブリスナーで確実に防ぐ）──
-  useEffect(() => {
-    const suppress = (e) => {
-      if (e.target.closest('.gantt-row')) e.preventDefault()
-    }
-    // capture: true でブラウザのデフォルト処理より先に発火させる
-    document.addEventListener('contextmenu', suppress, { capture: true })
-    return () => document.removeEventListener('contextmenu', suppress, { capture: true })
-  }, [])
-
   // ── 階層化: 折りたたみ状態 ──
   const [collapsedIds, setCollapsedIds] = useState(new Set())
 
-  // ── 階層化: コンテキストメニュー ──
-  const [contextMenu, setContextMenu] = useState(null) // { x, y, task }
+  // ── タスク追加種別選択モーダル ──
+  const [showAddTypeModal, setShowAddTypeModal] = useState(false)
 
   // ── サイドパネル幅 ──
   const SIDE_MIN = 200
@@ -742,22 +738,28 @@ export default function App() {
     })
   }, [])
 
-  // ── コンテキストメニュー表示 ──
-  const handleContextMenu = useCallback((e, task) => {
-    // 子タスクは子タスクを持てない（2階層まで）
-    if (task.parent_id) return
-    setContextMenu({ x: e.clientX, y: e.clientY, task })
-  }, [])
+  // ── タスク追加ボタン ──
+  const handleAddTaskClick = () => {
+    setShowAddTypeModal(true)
+  }
 
-  // ── 子タスク追加ダイアログを開く ──
-  const openAddChildDialog = useCallback((parentTask) => {
+  // 種別選択: メインタスクとして追加
+  const handleAddMain = () => {
+    setShowAddTypeModal(false)
+    setDialog({})
+  }
+
+  // 種別選択: 選択中タスクの子として追加
+  const handleAddChild = () => {
+    if (!selectedTask) return
+    setShowAddTypeModal(false)
     setDialog({
-      parent_id:  parentTask.id,
-      start_date: parentTask.start_date,
-      end_date:   parentTask.end_date,
-      color:      parentTask.color,
+      parent_id:  selectedTask.id,
+      start_date: selectedTask.start_date,
+      end_date:   selectedTask.end_date,
+      color:      selectedTask.color,
     })
-  }, [])
+  }
 
   // ── 検索 ──
   const triggerSearch = () => {
@@ -914,7 +916,3 @@ export default function App() {
       const { data, error } = await supabase.from('tasks').insert(newTask).select().single()
       if (error) { alert('保存に失敗しました: ' + error.message); return }
       setTasks(t => [...t, data])
-      setSelectedId(data.id)
-    } else {
-      const { data, error } = await supabase.from('tasks').update(taskData).eq('id', taskData.id).select().single()
-      if (error) { alert('保存に失敗しました: ' 
