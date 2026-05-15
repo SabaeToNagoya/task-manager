@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useCallback, useLayoutEffect } from 'react'
+import { useState, useEffect, useRef, useCallback, useLayoutEffect, useMemo } from 'react'
 import { supabase } from './supabase'
 import {
   DndContext,
@@ -87,10 +87,12 @@ const fmtDate = (s) => {
   return `${p.y}年${p.m + 1}月${p.d}日`
 }
 
-// ガントバーの位置・幅を計算（GanttChart・SortableGanttRow 共用）
-const getBar = (task, year, month, dims) => {
-  const ts = parseDate(task.start_date)
-  const te = parseDate(task.end_date)
+// ガントバーの位置・幅を計算（overrideDates で親タスクの集計日付を上書き可能）
+const getBar = (task, year, month, dims, overrideDates) => {
+  const startStr = overrideDates?.start_date || task.start_date
+  const endStr   = overrideDates?.end_date   || task.end_date
+  const ts = parseDate(startStr)
+  const te = parseDate(endStr)
   if (!ts || !te) return null
 
   let startIdx, endIdx
@@ -119,7 +121,6 @@ const getBar = (task, year, month, dims) => {
 // SearchModal
 // ─────────────────────────────────────────────────────────────────
 function SearchModal({ query, results, notes, onJump, onClose }) {
-  // start_date 昇順 → end_date 昇順 でソート
   const sorted = [...results].sort((a, b) => {
     if (a.start_date < b.start_date) return -1
     if (a.start_date > b.start_date) return  1
@@ -181,6 +182,48 @@ function StatusBadge({ status }) {
 }
 
 // ─────────────────────────────────────────────────────────────────
+// ContextMenu — 右クリックメニュー
+// ─────────────────────────────────────────────────────────────────
+function ContextMenu({ x, y, task, onAddChild, onClose }) {
+  const ref = useRef(null)
+
+  // メニュー外クリック or Escape で閉じる
+  useEffect(() => {
+    const onDown = (e) => {
+      if (ref.current && !ref.current.contains(e.target)) onClose()
+    }
+    const onKey = (e) => { if (e.key === 'Escape') onClose() }
+    document.addEventListener('mousedown', onDown)
+    document.addEventListener('keydown', onKey)
+    return () => {
+      document.removeEventListener('mousedown', onDown)
+      document.removeEventListener('keydown', onKey)
+    }
+  }, [onClose])
+
+  // 画面端へのはみ出し補正（簡易）
+  const menuW = 170
+  const menuH = 44
+  const adjustedX = Math.min(x, window.innerWidth  - menuW - 8)
+  const adjustedY = Math.min(y, window.innerHeight - menuH - 8)
+
+  return (
+    <div
+      ref={ref}
+      className="context-menu"
+      style={{ left: adjustedX, top: adjustedY }}
+    >
+      <button
+        className="context-menu-item"
+        onClick={() => { onAddChild(task); onClose() }}
+      >
+        ＋ 子タスクを追加
+      </button>
+    </div>
+  )
+}
+
+// ─────────────────────────────────────────────────────────────────
 // TaskDialog
 // ─────────────────────────────────────────────────────────────────
 const DEFAULT_FORM = {
@@ -188,10 +231,10 @@ const DEFAULT_FORM = {
   progress: 0, status: '待ち', color: '#4A90D9',
 }
 
-function TaskDialog({ task, onSave, onDelete, onClose }) {
+function TaskDialog({ task, parentTaskName, onSave, onDelete, onClose }) {
   const isNew = !task?.id
   const [form, setForm] = useState(
-    isNew ? { ...DEFAULT_FORM } : { ...DEFAULT_FORM, ...task }
+    isNew ? { ...DEFAULT_FORM, ...task } : { ...DEFAULT_FORM, ...task }
   )
   const set = (k, v) => setForm(f => ({ ...f, [k]: v }))
 
@@ -211,6 +254,14 @@ function TaskDialog({ task, onSave, onDelete, onClose }) {
           <h2>{isNew ? '＋ タスクを追加' : 'タスクを編集'}</h2>
           <button className="icon-btn" onClick={onClose}>✕</button>
         </div>
+
+        {/* 子タスク追加時: 親タスク名を表示 */}
+        {isNew && parentTaskName && (
+          <div className="parent-task-hint">
+            <span className="parent-task-hint-icon">↳</span>
+            <span>親タスク: <strong>{parentTaskName}</strong></span>
+          </div>
+        )}
 
         <div className="field">
           <label>タスク名</label>
@@ -304,28 +355,28 @@ function NotePanel({ taskId, content, onChange }) {
 // HoursPanel
 // ─────────────────────────────────────────────────────────────────
 function HoursPanel({ taskId, year, month, hoursMap, onSave }) {
-  const days = daysInMonth(year, month)
-  const total = Array.from({ length: days }, (_, i) => i + 1)
-    .reduce((s, d) => s + (Number(hoursMap?.[d]) || 0), 0)
+  const dims = daysInMonth(year, month)
+  const days = Array.from({ length: dims }, (_, i) => i + 1)
 
   return (
     <div className="hours-wrap">
-      <div className="hours-total">合計: <strong>{total.toFixed(1)}</strong> h</div>
-      <div className="hours-list">
-        {Array.from({ length: days }, (_, i) => {
-          const d = i + 1
-          const w = dow(year, month, d)
-          return (
-            <div key={d} className={`hours-row${w===0?' sun':''}${w===6?' sat':''}`}>
-              <span className="hours-label">{padStr(d)}日({DOW[w]})</span>
-              <input className="hours-input" type="number" min="0" max="24" step="0.5"
-                value={hoursMap?.[d] ?? ''} placeholder="0"
-                onChange={e => onSave(d, e.target.value)} />
-              <span className="hours-unit">h</span>
-            </div>
-          )
-        })}
-      </div>
+      {days.map(d => {
+        const w = dow(year, month, d)
+        const isSun = w===0, isSat = w===6
+        return (
+          <div key={d} className={`hours-row${isSun?' sun-row':''}${isSat?' sat-row':''}`}>
+            <span className="hours-day">{d}日({DOW[w]})</span>
+            <input
+              className="hours-input"
+              type="number" min="0" max="24" step="0.5"
+              value={hoursMap[d] ?? ''}
+              onChange={e => onSave(d, e.target.value)}
+              placeholder="0"
+            />
+            <span className="hours-unit">h</span>
+          </div>
+        )
+      })}
     </div>
   )
 }
@@ -337,42 +388,35 @@ function SidePanel({ task, year, month, noteContent, hoursMap, onSaveNote, onSav
   const [tab, setTab] = useState('note')
 
   if (!task) {
-    return (
-      <div className="side-empty">
-        <div className="side-empty-icon">📋</div>
-        <p>タスクを選択すると<br />メモと工数が表示されます</p>
-      </div>
-    )
+    return <div className="side-empty">タスクを選択するとメモ・工数が表示されます</div>
   }
 
   return (
-    <div className="side-inner">
+    <div className="side-content">
       <div className="side-task-bar">
         <StatusBadge status={task.status} />
         <span className="side-task-name" title={task.name}>{task.name}</span>
       </div>
-      <div className="tab-bar">
-        <button className={`tab-btn ${tab==='note'?'active':''}`} onClick={() => setTab('note')}>
-          📝 メモ
-        </button>
-        <button className={`tab-btn ${tab==='hours'?'active':''}`} onClick={() => setTab('hours')}>
-          ⏱ 工数
-        </button>
+      <div className="side-tabs">
+        <button className={`side-tab${tab==='note'?' active':''}`} onClick={() => setTab('note')}>メモ</button>
+        <button className={`side-tab${tab==='hours'?' active':''}`} onClick={() => setTab('hours')}>工数</button>
       </div>
-      <div className="tab-body">
-        {tab === 'note'
-          ? <NotePanel taskId={task.id} content={noteContent} onChange={onSaveNote} />
-          : <HoursPanel taskId={task.id} year={year} month={month} hoursMap={hoursMap} onSave={onSaveHours} />
-        }
-      </div>
+      {tab === 'note'
+        ? <NotePanel taskId={task.id} content={noteContent} onChange={onSaveNote} />
+        : <HoursPanel taskId={task.id} year={year} month={month} hoursMap={hoursMap} onSave={onSaveHours} />
+      }
     </div>
   )
 }
 
 // ─────────────────────────────────────────────────────────────────
-// SortableGanttRow — @dnd-kit による並び替え対応行
+// SortableGanttRow — 階層対応
 // ─────────────────────────────────────────────────────────────────
-function SortableGanttRow({ task, bar, dims, days, year, month, todayDay, selectedId, onSelect, onEdit }) {
+function SortableGanttRow({
+  task, bar, dims, days, year, month, todayDay,
+  selectedId, onSelect, onEdit, onContextMenu,
+  isParent, isChild, collapsed, onToggleCollapse,
+}) {
   const {
     attributes,
     listeners,
@@ -397,21 +441,45 @@ function SortableGanttRow({ task, bar, dims, days, year, month, todayDay, select
     <div
       ref={setNodeRef}
       style={style}
-      className={`gantt-row${sel ? ' selected' : ''}${isDragging ? ' dragging' : ''}`}
+      className={[
+        'gantt-row',
+        sel       ? 'selected'   : '',
+        isDragging? 'dragging'   : '',
+        isParent  ? 'parent-row' : '',
+        isChild   ? 'child-row'  : '',
+      ].filter(Boolean).join(' ')}
       onClick={() => onSelect(task.id)}
+      onContextMenu={(e) => { e.preventDefault(); onContextMenu(e, task) }}
     >
       {/* 左: タスク名 (sticky) */}
       <div
         className={`gantt-name-cell${sel ? ' sel-name' : ''}`}
         style={{ width: NAME_W }}
       >
-        {/* ドラッグハンドル: listeners をここにのみ付与 */}
+        {/* 折りたたみトグル（親タスクのみ）*/}
+        {isParent ? (
+          <span
+            className="collapse-toggle"
+            title={collapsed ? '展開' : '折りたたむ'}
+            onClick={e => { e.stopPropagation(); onToggleCollapse(task.id) }}
+          >
+            {collapsed ? '▶' : '▼'}
+          </span>
+        ) : (
+          <span className="collapse-spacer" />
+        )}
+
+        {/* 子タスクのインデント */}
+        {isChild && <span className="child-indent" />}
+
+        {/* ドラッグハンドル */}
         <span
           className="drag-handle"
           title="ドラッグして並び替え"
           {...attributes}
           {...listeners}
         >⠿</span>
+
         <StatusBadge status={task.status} />
         <span className="task-text" title={task.name}>{task.name}</span>
         <button className="edit-btn"
@@ -453,8 +521,9 @@ function SortableGanttRow({ task, bar, dims, days, year, month, todayDay, select
 // GanttChart
 // ─────────────────────────────────────────────────────────────────
 function GanttChart({
-  tasks, year, month, selectedId, hasAnyTasks,
-  onSelect, onEdit,
+  displayTasks, parentIds, childrenByParent, collapsedIds,
+  year, month, selectedId, hasAnyTasks,
+  onSelect, onEdit, onContextMenu, onToggleCollapse,
 }) {
   const dims = daysInMonth(year, month)
   const days = Array.from({ length: dims }, (_, i) => i + 1)
@@ -462,10 +531,18 @@ function GanttChart({
     today.getFullYear() === year && today.getMonth() === month
       ? today.getDate() : -1
 
-  // 空メッセージ: タスク自体がないか、この月に該当タスクがないかで分岐
   const emptyMessage = hasAnyTasks
     ? 'この月に表示するタスクはありません。\n月を切り替えるか、検索でタスクを探してください。'
     : 'タスクがありません。右上の「＋ タスク追加」から作成してください。'
+
+  // 親タスクの有効日付を子タスクから集計
+  const getParentEffectiveDates = (taskId) => {
+    const children = childrenByParent[taskId] || []
+    if (children.length === 0) return null
+    const starts = children.map(c => c.start_date).filter(Boolean).sort()
+    const ends   = children.map(c => c.end_date).filter(Boolean).sort()
+    return { start_date: starts[0], end_date: ends[ends.length - 1] }
+  }
 
   return (
     <div className="gantt-scroll">
@@ -491,29 +568,41 @@ function GanttChart({
         </div>
 
         {/* タスク行 */}
-        {tasks.length === 0 ? (
+        {displayTasks.length === 0 ? (
           <div className="gantt-empty">
             {emptyMessage.split('\n').map((line, i) => (
               <span key={i}>{line}{i < emptyMessage.split('\n').length - 1 && <br />}</span>
             ))}
           </div>
         ) : (
-          <SortableContext items={tasks.map(t => t.id)} strategy={verticalListSortingStrategy}>
-            {tasks.map(task => (
-              <SortableGanttRow
-                key={task.id}
-                task={task}
-                bar={getBar(task, year, month, dims)}
-                dims={dims}
-                days={days}
-                year={year}
-                month={month}
-                todayDay={todayDay}
-                selectedId={selectedId}
-                onSelect={onSelect}
-                onEdit={onEdit}
-              />
-            ))}
+          <SortableContext items={displayTasks.map(t => t.id)} strategy={verticalListSortingStrategy}>
+            {displayTasks.map(task => {
+              const isParent = parentIds.has(task.id)
+              const isChild  = !!task.parent_id
+              const collapsed = collapsedIds.has(task.id)
+              // 親タスクのバーは子の集計から計算
+              const overrideDates = isParent ? getParentEffectiveDates(task.id) : null
+              return (
+                <SortableGanttRow
+                  key={task.id}
+                  task={task}
+                  bar={getBar(task, year, month, dims, overrideDates)}
+                  dims={dims}
+                  days={days}
+                  year={year}
+                  month={month}
+                  todayDay={todayDay}
+                  selectedId={selectedId}
+                  onSelect={onSelect}
+                  onEdit={onEdit}
+                  onContextMenu={onContextMenu}
+                  isParent={isParent}
+                  isChild={isChild}
+                  collapsed={collapsed}
+                  onToggleCollapse={onToggleCollapse}
+                />
+              )
+            })}
           </SortableContext>
         )}
       </div>
@@ -529,7 +618,7 @@ export default function App() {
   const [month, setMonth] = useState(today.getMonth())
   const [tasks, setTasks] = useState([])
   const [selectedId, setSelectedId] = useState(null)
-  const [dialog, setDialog] = useState(null)
+  const [dialog, setDialog] = useState(null)   // null | {} | task
   const [notes, setNotes]   = useState({})
   const [allHours, setAllHours] = useState({})
   const [loading, setLoading] = useState(true)
@@ -537,7 +626,13 @@ export default function App() {
   const [showMobilePanel, setShowMobilePanel] = useState(false)
   const [error, setError] = useState(null)
 
-  // ── サイドパネル幅（localStorage で永続化）──
+  // ── 階層化: 折りたたみ状態 ──
+  const [collapsedIds, setCollapsedIds] = useState(new Set())
+
+  // ── 階層化: コンテキストメニュー ──
+  const [contextMenu, setContextMenu] = useState(null) // { x, y, task }
+
+  // ── サイドパネル幅 ──
   const SIDE_MIN = 200
   const SIDE_MAX = 600
   const SIDE_DEFAULT = 300
@@ -556,20 +651,105 @@ export default function App() {
   const [searchResults,  setSearchResults]  = useState([])
   const [searchNoResults, setSearchNoResults] = useState(false)
 
-  // ── @dnd-kit センサー設定 ──
-  // MouseSensor: マウス専用（8px動いてから開始）
-  // TouchSensor: タッチ・iOS専用（250ms長押し後に開始、5px以内のズレは許容）
-  // ※ PointerSensor + TouchSensor の組み合わせは iOS で競合するため使わない
+  // ── @dnd-kit センサー ──
   const sensors = useSensors(
-    useSensor(MouseSensor, {
-      activationConstraint: { distance: 8 },
-    }),
-    useSensor(TouchSensor, {
-      activationConstraint: { delay: 250, tolerance: 5 },
-    })
+    useSensor(MouseSensor, { activationConstraint: { distance: 8 } }),
+    useSensor(TouchSensor, { activationConstraint: { delay: 250, tolerance: 5 } })
   )
 
-  // ── 検索を実行してモーダルを開く ──
+  // ── 派生データ: 親子マップ ──
+  const childrenByParent = useMemo(() => {
+    const map = {}
+    tasks.forEach(t => {
+      if (t.parent_id) {
+        if (!map[t.parent_id]) map[t.parent_id] = []
+        map[t.parent_id].push(t)
+      }
+    })
+    return map
+  }, [tasks])
+
+  const parentIds = useMemo(() => new Set(Object.keys(childrenByParent)), [childrenByParent])
+
+  // ── 派生データ: 親タスクの有効日付（子から集計）──
+  const getParentEffectiveDates = useCallback((taskId) => {
+    const children = childrenByParent[taskId] || []
+    if (children.length === 0) return null
+    const starts = children.map(c => c.start_date).filter(Boolean).sort()
+    const ends   = children.map(c => c.end_date).filter(Boolean).sort()
+    return { start_date: starts[0], end_date: ends[ends.length - 1] }
+  }, [childrenByParent])
+
+  // ── 当月表示フィルタ（親タスクは子の集計日付で判定）──
+  const monthVisibleTasks = useMemo(() => {
+    return tasks.filter(t => {
+      let startStr = t.start_date
+      let endStr   = t.end_date
+      if (parentIds.has(t.id)) {
+        const eff = getParentEffectiveDates(t.id)
+        if (eff) { startStr = eff.start_date; endStr = eff.end_date }
+      }
+      const ts = parseDate(startStr)
+      const te = parseDate(endStr)
+      if (!ts || !te) return false
+      if (ts.y > year || (ts.y === year && ts.m > month)) return false
+      if (te.y < year || (te.y === year && te.m < month)) return false
+      return true
+    })
+  }, [tasks, year, month, parentIds, getParentEffectiveDates])
+
+  // ── 表示順タスクリスト（親 → 子 の順に並べる）──
+  const displayTasks = useMemo(() => {
+    const visibleIds = new Set(monthVisibleTasks.map(t => t.id))
+    const result = []
+
+    // 最上位タスク（parent_id = null）を sort_order 順に処理
+    const topLevel = tasks
+      .filter(t => !t.parent_id && visibleIds.has(t.id))
+      .sort((a, b) => a.sort_order - b.sort_order)
+
+    topLevel.forEach(parent => {
+      result.push(parent)
+      // 折りたたまれていなければ子タスクを追加
+      if (!collapsedIds.has(parent.id)) {
+        const children = (childrenByParent[parent.id] || [])
+          .filter(c => visibleIds.has(c.id))
+          .sort((a, b) => a.sort_order - b.sort_order)
+        children.forEach(c => result.push(c))
+      }
+    })
+
+    return result
+  }, [monthVisibleTasks, tasks, collapsedIds, childrenByParent])
+
+  // ── 折りたたみトグル ──
+  const toggleCollapse = useCallback((id) => {
+    setCollapsedIds(prev => {
+      const next = new Set(prev)
+      if (next.has(id)) next.delete(id)
+      else next.add(id)
+      return next
+    })
+  }, [])
+
+  // ── コンテキストメニュー表示 ──
+  const handleContextMenu = useCallback((e, task) => {
+    // 子タスクは子タスクを持てない（2階層まで）
+    if (task.parent_id) return
+    setContextMenu({ x: e.clientX, y: e.clientY, task })
+  }, [])
+
+  // ── 子タスク追加ダイアログを開く ──
+  const openAddChildDialog = useCallback((parentTask) => {
+    setDialog({
+      parent_id:  parentTask.id,
+      start_date: parentTask.start_date,
+      end_date:   parentTask.end_date,
+      color:      parentTask.color,
+    })
+  }, [])
+
+  // ── 検索 ──
   const triggerSearch = () => {
     const q = searchQuery.trim()
     if (!q) return
@@ -609,7 +789,6 @@ export default function App() {
     setTasks(taskData || [])
     setError(null)
 
-    // 全メモを一括キャッシュ (検索に使う)
     const noteMap = {}
     noteData?.forEach(n => { noteMap[n.task_id] = n.content || '' })
     setNotes(noteMap)
@@ -618,7 +797,6 @@ export default function App() {
     setRefreshing(false)
   }, [])
 
-  // ── 起動時: タスク + 全メモ を読み込み ──
   useEffect(() => { loadData() }, [])
 
   // ── 工数読み込み ──
@@ -645,45 +823,46 @@ export default function App() {
   const currentHoursMap = allHours[currentHoursKey] || {}
   const noteContent     = notes[selectedId] || ''
 
-  // ── 当月表示フィルタ (ガントチャート用) ──
-  const monthVisibleTasks = tasks.filter(t => {
-    const ts = parseDate(t.start_date)
-    const te = parseDate(t.end_date)
-    if (!ts || !te) return false
-    if (ts.y > year || (ts.y === year && ts.m > month)) return false
-    if (te.y < year || (te.y === year && te.m < month)) return false
-    return true
-  })
-
-  // 検索結果からタスクへジャンプ（モーダルを閉じる）
+  // 検索結果からタスクへジャンプ
   const jumpToTask = (task) => {
     const ts = parseDate(task.start_date)
-    if (ts) {
-      setYear(ts.y)
-      setMonth(ts.m)
-    }
+    if (ts) { setYear(ts.y); setMonth(ts.m) }
     setSelectedId(task.id)
     setSearchQuery('')
     setShowSearchModal(false)
     setSearchResults([])
   }
 
-  // ── @dnd-kit ドラッグ終了ハンドラ ──
+  // ── @dnd-kit ドラッグ終了（同一階層のみ並び替え）──
   const handleDndEnd = async ({ active, over }) => {
     if (!over || active.id === over.id) return
 
-    // monthVisibleTasks 内での並び替えを全タスクに反映
-    const newTasks = [...tasks]
-    const fromIdx  = newTasks.findIndex(t => t.id === active.id)
-    const toIdx    = newTasks.findIndex(t => t.id === over.id)
-    const reordered = arrayMove(newTasks, fromIdx, toIdx)
-    const updated = reordered.map((t, i) => ({ ...t, sort_order: i }))
+    const activeTask = tasks.find(t => t.id === active.id)
+    const overTask   = tasks.find(t => t.id === over.id)
+    if (!activeTask || !overTask) return
 
-    setTasks(updated)
+    // 異なる階層へのドロップは無視
+    if (activeTask.parent_id !== overTask.parent_id) return
 
-    // Supabase に sort_order を一括保存
+    // 同一階層グループ内で並び替え
+    const sameLevel = tasks
+      .filter(t => t.parent_id === activeTask.parent_id)
+      .sort((a, b) => a.sort_order - b.sort_order)
+
+    const fromIdx = sameLevel.findIndex(t => t.id === active.id)
+    const toIdx   = sameLevel.findIndex(t => t.id === over.id)
+    if (fromIdx === -1 || toIdx === -1) return
+
+    const reordered = arrayMove(sameLevel, fromIdx, toIdx)
+    const updatedGroup = reordered.map((t, i) => ({ ...t, sort_order: i }))
+
+    // 全タスクリストに反映
+    const updatedMap = {}
+    updatedGroup.forEach(t => { updatedMap[t.id] = t })
+    setTasks(prev => prev.map(t => updatedMap[t.id] ?? t))
+
     await Promise.all(
-      updated.map(t =>
+      updatedGroup.map(t =>
         supabase.from('tasks').update({ sort_order: t.sort_order }).eq('id', t.id)
       )
     )
@@ -712,8 +891,16 @@ export default function App() {
 
   // ── タスク保存 ──
   const saveTask = async (taskData) => {
+    const parentId = taskData.parent_id || null
     if (!taskData.id) {
-      const newTask = { ...taskData, id: genId(), sort_order: tasks.length }
+      // 同じ親を持つタスク数を sort_order の初期値にする
+      const siblings = tasks.filter(t => (t.parent_id || null) === parentId)
+      const newTask = {
+        ...taskData,
+        id: genId(),
+        parent_id: parentId,
+        sort_order: siblings.length,
+      }
       const { data, error } = await supabase.from('tasks').insert(newTask).select().single()
       if (error) { alert('保存に失敗しました: ' + error.message); return }
       setTasks(t => [...t, data])
@@ -726,205 +913,10 @@ export default function App() {
     setDialog(null)
   }
 
-  // ── タスク削除 ──
+  // ── タスク削除（子タスクも一緒に削除される旨を警告）──
   const deleteTask = async (id) => {
-    if (!window.confirm('このタスクを削除しますか？')) return
-    const { error } = await supabase.from('tasks').delete().eq('id', id)
-    if (error) { alert('削除に失敗しました: ' + error.message); return }
-    setTasks(t => t.filter(x => x.id !== id))
-    if (selectedId === id) setSelectedId(null)
-    setDialog(null)
-  }
-
-  // ── サイドパネル リサイズ処理 ──
-  const handleResizeStart = useCallback((e) => {
-    isResizing.current = true
-    resizeStartX.current = e.type === 'touchstart' ? e.touches[0].clientX : e.clientX
-    resizeStartW.current = sideWidth
-
-    const onMove = (ev) => {
-      if (!isResizing.current) return
-      const cx = ev.type === 'touchmove' ? ev.touches[0].clientX : ev.clientX
-      const delta = resizeStartX.current - cx   // 左にドラッグ → 幅が増える
-      const newW = Math.min(SIDE_MAX, Math.max(SIDE_MIN, resizeStartW.current + delta))
-      setSideWidth(newW)
-    }
-    const onUp = (ev) => {
-      if (!isResizing.current) return
-      isResizing.current = false
-      const cx = ev.type === 'touchend'
-        ? (ev.changedTouches[0]?.clientX ?? resizeStartX.current)
-        : ev.clientX
-      const delta = resizeStartX.current - cx
-      const newW = Math.min(SIDE_MAX, Math.max(SIDE_MIN, resizeStartW.current + delta))
-      setSideWidth(newW)
-      localStorage.setItem('sideWidth', String(newW))
-      document.removeEventListener('mousemove', onMove)
-      document.removeEventListener('mouseup',   onUp)
-      document.removeEventListener('touchmove', onMove)
-      document.removeEventListener('touchend',  onUp)
-      document.body.style.userSelect = ''
-      document.body.style.cursor = ''
-    }
-
-    document.addEventListener('mousemove', onMove)
-    document.addEventListener('mouseup',   onUp)
-    document.addEventListener('touchmove', onMove, { passive: true })
-    document.addEventListener('touchend',  onUp)
-    document.body.style.userSelect = 'none'
-    document.body.style.cursor = 'col-resize'
-  }, [sideWidth])
-
-  // ── 月ナビ ──
-  const prevMonth = () => {
-    if (month === 0) { setYear(y => y-1); setMonth(11) }
-    else setMonth(m => m-1)
-  }
-  const nextMonth = () => {
-    if (month === 11) { setYear(y => y+1); setMonth(0) }
-    else setMonth(m => m+1)
-  }
-
-  const handleSelect = (id) => {
-    setSelectedId(id)
-    setShowMobilePanel(true)
-  }
-
-  const selectedTask = tasks.find(t => t.id === selectedId) || null
-
-  const sidePanelProps = {
-    task: selectedTask, year, month,
-    noteContent, hoursMap: currentHoursMap,
-    onSaveNote: saveNote, onSaveHours: saveHours,
-  }
-
-  return (
-    <div className="app">
-      {/* ── ヘッダー ── */}
-      <header className="app-header">
-        {/* 月ナビ */}
-        <div className="month-nav">
-          <button className="nav-btn" onClick={prevMonth}>‹</button>
-          <button className="nav-btn month-label"
-            onClick={() => { setYear(today.getFullYear()); setMonth(today.getMonth()) }}>
-            {year}年 {MONTH_JP[month]}
-          </button>
-          <button className="nav-btn" onClick={nextMonth}>›</button>
-        </div>
-
-        {/* 検索バー */}
-        <div className="search-wrap">
-          <button className="search-icon-btn" onClick={triggerSearch} aria-label="検索">🔍</button>
-          <input
-            className="search-input"
-            type="search"
-            placeholder="タスク・メモを検索… (Enter)"
-            value={searchQuery}
-            onChange={e => { setSearchQuery(e.target.value); setSearchNoResults(false) }}
-            onKeyDown={e => {
-              if (e.key === 'Enter') triggerSearch()
-              if (e.key === 'Escape') { setSearchQuery(''); setSearchNoResults(false) }
-            }}
-          />
-          {searchQuery && (
-            <button className="search-clear"
-              onClick={() => { setSearchQuery(''); setSearchNoResults(false) }}
-              aria-label="検索クリア">✕</button>
-          )}
-          {searchNoResults && (
-            <div className="search-no-results">該当するタスクはありません</div>
-          )}
-        </div>
-
-        {/* 右ボタン群 */}
-        <div className="header-right">
-          {selectedTask && (
-            <button className="btn btn-ghost panel-btn"
-              onClick={() => setShowMobilePanel(p => !p)}>
-              {showMobilePanel ? '✕' : '📋'}
-            </button>
-          )}
-          <button
-            className={`icon-btn refresh-btn${refreshing ? ' refreshing' : ''}`}
-            onClick={() => loadData({ isRefresh: true })}
-            disabled={refreshing}
-            title="最新データに更新"
-            aria-label="更新"
-          >⟳</button>
-          <button className="btn btn-primary" onClick={() => setDialog({})}>
-            ＋ タスク追加
-          </button>
-        </div>
-      </header>
-
-      {/* ── メイン ── */}
-      <div className="app-body">
-        <div className="gantt-area">
-          {error ? (
-            <div className="err-msg">
-              <strong>接続エラー:</strong> {error}
-              <br /><small>Supabase の接続情報・RLS 設定をご確認ください</small>
-            </div>
-          ) : loading ? (
-            <div className="loading"><span className="spin">⟳</span> 読み込み中…</div>
-          ) : (
-            <DndContext
-              sensors={sensors}
-              collisionDetection={closestCenter}
-              onDragEnd={handleDndEnd}
-            >
-              <GanttChart
-                tasks={monthVisibleTasks}
-                hasAnyTasks={tasks.length > 0}
-                year={year} month={month}
-                selectedId={selectedId}
-                onSelect={handleSelect}
-                onEdit={task => setDialog(task)}
-              />
-            </DndContext>
-          )}
-        </div>
-
-        <aside className="side-panel" style={{ width: sideWidth }}>
-          <div
-            className="side-resizer"
-            onMouseDown={handleResizeStart}
-            onTouchStart={handleResizeStart}
-            title="ドラッグして幅を調整"
-          />
-          <SidePanel {...sidePanelProps} />
-        </aside>
-      </div>
-
-      {/* モバイルパネル */}
-      {showMobilePanel && selectedTask && (
-        <div className="mobile-panel">
-          <div className="mobile-panel-bar">
-            <span className="mobile-panel-title">{selectedTask.name}</span>
-            <button className="icon-btn" onClick={() => setShowMobilePanel(false)}>✕</button>
-          </div>
-          <div className="mobile-panel-body">
-            <SidePanel {...sidePanelProps} />
-          </div>
-        </div>
-      )}
-
-      {/* タスクダイアログ */}
-      {dialog !== null && (
-        <TaskDialog task={dialog} onSave={saveTask}
-          onDelete={deleteTask} onClose={() => setDialog(null)} />
-      )}
-
-      {/* 検索モーダル */}
-      {showSearchModal && (
-        <SearchModal
-          query={searchQuery}
-          results={searchResults}
-          notes={notes}
-          onJump={jumpToTask}
-          onClose={() => { setShowSearchModal(false); setSearchResults([]) }}
-        />
-      )}
-    </div>
-  )
-}
+    const childCount = (childrenByParent[id] || []).length
+    const msg = childCount > 0
+      ? `このタスクを削除しますか？\n子タスク（${childCount}件）も一緒に削除されます。`
+      : 'このタスクを削除しますか？'
+    if (!window.confirm(msg)) return
