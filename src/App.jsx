@@ -449,7 +449,7 @@ function SortableGanttRow({
         isChild   ? 'child-row'  : '',
       ].filter(Boolean).join(' ')}
       onClick={() => onSelect(task.id)}
-      onContextMenu={(e) => { e.preventDefault(); onContextMenu(e, task) }}
+      onContextMenu={(e) => { e.preventDefault(); e.stopPropagation(); onContextMenu(e, task) }}
     >
       {/* 左: タスク名 (sticky) */}
       <div
@@ -625,6 +625,16 @@ export default function App() {
   const [refreshing, setRefreshing] = useState(false)
   const [showMobilePanel, setShowMobilePanel] = useState(false)
   const [error, setError] = useState(null)
+
+  // ── ガント行の右クリックでブラウザ標準メニューを抑制（ネイティブリスナーで確実に防ぐ）──
+  useEffect(() => {
+    const suppress = (e) => {
+      if (e.target.closest('.gantt-row')) e.preventDefault()
+    }
+    // capture: true でブラウザのデフォルト処理より先に発火させる
+    document.addEventListener('contextmenu', suppress, { capture: true })
+    return () => document.removeEventListener('contextmenu', suppress, { capture: true })
+  }, [])
 
   // ── 階層化: 折りたたみ状態 ──
   const [collapsedIds, setCollapsedIds] = useState(new Set())
@@ -907,16 +917,4 @@ export default function App() {
       setSelectedId(data.id)
     } else {
       const { data, error } = await supabase.from('tasks').update(taskData).eq('id', taskData.id).select().single()
-      if (error) { alert('保存に失敗しました: ' + error.message); return }
-      setTasks(t => t.map(x => x.id === data.id ? data : x))
-    }
-    setDialog(null)
-  }
-
-  // ── タスク削除（子タスクも一緒に削除される旨を警告）──
-  const deleteTask = async (id) => {
-    const childCount = (childrenByParent[id] || []).length
-    const msg = childCount > 0
-      ? `このタスクを削除しますか？\n子タスク（${childCount}件）も一緒に削除されます。`
-      : 'このタスクを削除しますか？'
-    if (!window.confirm(msg)) return
+      if (error) { alert('保存に失敗しました: ' 
