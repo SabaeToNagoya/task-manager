@@ -184,7 +184,11 @@ function StatusBadge({ status }) {
 // ─────────────────────────────────────────────────────────────────
 // AddTypeModal — タスク追加時の種別選択
 // ─────────────────────────────────────────────────────────────────
-function AddTypeModal({ selectedTask, canAddChild, onSelectMain, onSelectChild, onClose }) {
+// parentTask: ボタンクリック時点でスナップショットしたタスク（null = 未選択）
+function AddTypeModal({ parentTask, onSelectMain, onSelectChild, onClose }) {
+  // canAddChild: 選択タスクが最上位タスクのみ true（子タスクは不可）
+  const canAddChild = !!(parentTask && !parentTask.parent_id)
+
   // Escape で閉じる
   useEffect(() => {
     const onKey = (e) => { if (e.key === 'Escape') onClose() }
@@ -209,7 +213,7 @@ function AddTypeModal({ selectedTask, canAddChild, onSelectMain, onSelectChild, 
             <button className="add-type-card add-type-card--child" onClick={onSelectChild}>
               <span className="add-type-icon">↳</span>
               <span className="add-type-label">
-                「{selectedTask.name}」の<br />子タスクとして追加
+                「{parentTask.name}」の子タスクとして追加
               </span>
               <span className="add-type-desc">選択中のタスクの配下に追加します</span>
             </button>
@@ -218,8 +222,8 @@ function AddTypeModal({ selectedTask, canAddChild, onSelectMain, onSelectChild, 
               <span className="add-type-icon">↳</span>
               <span className="add-type-label">子タスクとして追加</span>
               <span className="add-type-desc">
-                {!selectedTask
-                  ? 'タスクを選択すると有効になります'
+                {!parentTask
+                  ? 'ガントチャートでタスクを選択してからボタンを押してください'
                   : '子タスクにはさらに子タスクを追加できません'}
               </span>
             </div>
@@ -636,7 +640,9 @@ export default function App() {
   const [collapsedIds, setCollapsedIds] = useState(new Set())
 
   // ── タスク追加種別選択モーダル ──
-  const [showAddTypeModal, setShowAddTypeModal] = useState(false)
+  const [showAddTypeModal,  setShowAddTypeModal]  = useState(false)
+  // クリック時点の selectedTask をスナップショット（レンダリングタイミングのズレを防ぐ）
+  const [addModalParentTask, setAddModalParentTask] = useState(null)
 
   // ── サイドパネル幅 ──
   const SIDE_MIN = 200
@@ -739,25 +745,30 @@ export default function App() {
   }, [])
 
   // ── タスク追加ボタン ──
+  // クリック時点の selectedTask を即座にスナップショット
   const handleAddTaskClick = () => {
+    setAddModalParentTask(selectedTask)   // null でも可（未選択状態を表す）
     setShowAddTypeModal(true)
   }
 
   // 種別選択: メインタスクとして追加
   const handleAddMain = () => {
     setShowAddTypeModal(false)
+    setAddModalParentTask(null)
     setDialog({})
   }
 
   // 種別選択: 選択中タスクの子として追加
   const handleAddChild = () => {
-    if (!selectedTask) return
+    const parent = addModalParentTask
+    if (!parent) return
     setShowAddTypeModal(false)
+    setAddModalParentTask(null)
     setDialog({
-      parent_id:  selectedTask.id,
-      start_date: selectedTask.start_date,
-      end_date:   selectedTask.end_date,
-      color:      selectedTask.color,
+      parent_id:  parent.id,
+      start_date: parent.start_date,
+      end_date:   parent.end_date,
+      color:      parent.color,
     })
   }
 
@@ -898,21 +909,4 @@ export default function App() {
     }))
     const dateStr = toDateStr(year, month, day)
     await supabase.from('task_hours')
-      .upsert({ task_id: selectedId, date: dateStr, hours: h }, { onConflict: 'task_id,date' })
-  }
-
-  // ── タスク保存 ──
-  const saveTask = async (taskData) => {
-    const parentId = taskData.parent_id || null
-    if (!taskData.id) {
-      // 同じ親を持つタスク数を sort_order の初期値にする
-      const siblings = tasks.filter(t => (t.parent_id || null) === parentId)
-      const newTask = {
-        ...taskData,
-        id: genId(),
-        parent_id: parentId,
-        sort_order: siblings.length,
-      }
-      const { data, error } = await supabase.from('tasks').insert(newTask).select().single()
-      if (error) { alert('保存に失敗しました: ' + error.message); return }
-      setTasks(t => [...t, data])
+      .upsert({ task_id: selectedId, date
