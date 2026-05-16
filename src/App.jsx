@@ -499,7 +499,7 @@ function GanttChart({
 
   // ── 階層表示リストを構築 ──
   // 親タスク → その子タスク（折りたたみ考慮）の順に並べる
-  const parentTasksInView = tasks.filter(t => !t.parent_id)
+  const parentTasksInView = tasks.filter(t => !t.parent_id).sort((a, b) => a.sort_order - b.sort_order)
   // allTasks から子タスクの存在確認に使う（当月外の子も含む）
   const childrenByParent = {}
   allTasks.forEach(t => {
@@ -1061,9 +1061,4 @@ export default function App() {
           results={searchResults}
           notes={notes}
           onJump={jumpToTask}
-          onClose={() => { setShowSearchModal(false); setSearchResults([]) }}
-        />
-      )}
-    </div>
-  )
-}
+          onClose={() => { setShowSearchModal(false); setSearchResults
