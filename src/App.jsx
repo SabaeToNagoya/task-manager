@@ -190,11 +190,10 @@ const DEFAULT_FORM = {
 
 function TaskDialog({ task, onSave, onDelete, onClose }) {
   const isNew = !task?.id
-  // 新規作成時は task.parentId を、編集時は task.parent_id を参照
-  const isChildTask = isNew ? !!task?.parentId : !!task?.parent_id
+  const isChildTask = isNew ? !!task?.parentid : !!task?.parentid
   const [form, setForm] = useState(
     isNew
-      ? { ...DEFAULT_FORM, parent_id: task?.parentId || null }
+      ? { ...DEFAULT_FORM, parentid: task?.parentid || null }
       : { ...DEFAULT_FORM, ...task }
   )
   const set = (k, v) => setForm(f => ({ ...f, [k]: v }))
@@ -499,18 +498,18 @@ function GanttChart({
 
   // ── 階層表示リストを構築 ──
   // 親タスク → その子タスク（折りたたみ考慮）の順に並べる
-  const parentTasksInView = tasks.filter(t => !t.parent_id).sort((a, b) => a.sort_order - b.sort_order)
+  const parentTasksInView = tasks.filter(t => !t.parentid).sort((a, b) => a.sort_order - b.sort_order)
   // allTasks から子タスクの存在確認に使う（当月外の子も含む）
   const childrenByParent = {}
   allTasks.forEach(t => {
-    if (t.parent_id) {
-      if (!childrenByParent[t.parent_id]) childrenByParent[t.parent_id] = []
-      childrenByParent[t.parent_id].push(t)
+    if (t.parentid) {
+      if (!childrenByParent[t.parentid]) childrenByParent[t.parentid] = []
+      childrenByParent[t.parentid].push(t)
     }
   })
 
   const displayList = []
-  const parentIdsInView = new Set(parentTasksInView.map(t => t.id))
+  const parentidsInView = new Set(parentTasksInView.map(t => t.id))
 
   // 親タスクとその子を順番に追加
   parentTasksInView.forEach(parent => {
@@ -518,7 +517,7 @@ function GanttChart({
     if (!collapsedIds.has(parent.id)) {
       // 当月表示対象の子タスクのみ表示
       const children = tasks
-        .filter(t => t.parent_id === parent.id)
+        .filter(t => t.parentid === parent.id)
         .sort((a, b) => a.sort_order - b.sort_order)
       children.forEach(child => displayList.push({ task: child, isChild: true }))
     }
@@ -526,7 +525,7 @@ function GanttChart({
 
   // 親が当月に表示されていない孤立子タスク（親が別の月など）は末尾に追加
   tasks
-    .filter(t => t.parent_id && !parentIdsInView.has(t.parent_id))
+    .filter(t => t.parentid && !parentidsInView.has(t.parentid))
     .forEach(t => displayList.push({ task: t, isChild: true }))
 
   return (
@@ -762,21 +761,21 @@ export default function App() {
     if (!activeTask || !overTask) return
 
     // 子→親位置への移動は禁止
-    if (activeTask.parent_id && !overTask.parent_id) return
+    if (activeTask.parentid && !overTask.parentid) return
     // 異なる親への移動は禁止
-    if (activeTask.parent_id && overTask.parent_id &&
-        activeTask.parent_id !== overTask.parent_id) return
+    if (activeTask.parentid && overTask.parentid &&
+        activeTask.parentid !== overTask.parentid) return
     // 親をドラッグ中に子の上に乗った場合、その子の親を over とみなす
-    if (!activeTask.parent_id && overTask.parent_id) {
-      const overParent = tasks.find(t => t.id === overTask.parent_id)
+    if (!activeTask.parentid && overTask.parentid) {
+      const overParent = tasks.find(t => t.id === overTask.parentid)
       if (!overParent || overParent.id === activeTask.id) return
       overTask = overParent
     }
     if (overTask.id === activeTask.id) return
 
-    if (!activeTask.parent_id) {
+    if (!activeTask.parentid) {
       // ── 親タスク同士の並び替え ──
-      const parents = tasks.filter(t => !t.parent_id).sort((a, b) => a.sort_order - b.sort_order)
+      const parents = tasks.filter(t => !t.parentid).sort((a, b) => a.sort_order - b.sort_order)
       const fromIdx = parents.findIndex(t => t.id === active.id)
       const toIdx   = parents.findIndex(t => t.id === overTask.id)
       const reordered = arrayMove(parents, fromIdx, toIdx).map((t, i) => ({ ...t, sort_order: i }))
@@ -787,7 +786,7 @@ export default function App() {
     } else {
       // ── 同じ親内の子タスク同士の並び替え ──
       const siblings = tasks
-        .filter(t => t.parent_id === activeTask.parent_id)
+        .filter(t => t.parentid === activeTask.parentid)
         .sort((a, b) => a.sort_order - b.sort_order)
       const fromIdx = siblings.findIndex(t => t.id === active.id)
       const toIdx   = siblings.findIndex(t => t.id === overTask.id)
@@ -823,13 +822,13 @@ export default function App() {
   // ── タスク保存 ──
   const saveTask = async (taskData) => {
     if (!taskData.id) {
-      // sort_order: 同じ parent_id を持つタスクの末尾に追加
-      const siblings = tasks.filter(t => t.parent_id === (taskData.parent_id || null))
+      // sort_order: 同じ parentid を持つタスクの末尾に追加
+      const siblings = tasks.filter(t => t.parentid === (taskData.parentid || null))
       const newTask = {
         ...taskData,
         id: genId(),
         sort_order: siblings.length,
-        parent_id: taskData.parent_id || null,
+        parentid: taskData.parentid || null,
       }
       const { data, error } = await supabase.from('tasks').insert(newTask).select().single()
       if (error) { alert('保存に失敗しました: ' + error.message); return }
@@ -972,15 +971,15 @@ export default function App() {
           <button
             className="btn btn-secondary"
             onClick={() => {
-              if (selectedTask && !selectedTask.parent_id) {
-                setDialog({ parentId: selectedId })
+              if (selectedTask && !selectedTask.parentid) {
+                setDialog({ parentid: selectedId })
               }
             }}
-            disabled={!selectedTask || !!selectedTask.parent_id}
+            disabled={!selectedTask || !!selectedTask.parentid}
             title={
               !selectedTask
                 ? '親タスクを選択してから押してください'
-                : selectedTask.parent_id
+                : selectedTask.parentid
                   ? '子タスクにはさらに子タスクを追加できません'
                   : `「${selectedTask.name}」に子タスクを追加`
             }
