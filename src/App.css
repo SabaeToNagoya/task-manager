@@ -1140,4 +1140,8 @@ html, body {
     gap: 8px;
   }
   .search-wrap {
-    order: 10;       /* ヘッダー内で
+    order: 10;       /* ヘッダー内で最後尾に配置（2行目に折り返し） */
+    flex: 1 1 100%;
+    max-width: 100%;
+  }
+}
