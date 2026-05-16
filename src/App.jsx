@@ -758,20 +758,27 @@ export default function App() {
     if (!over || active.id === over.id) return
 
     const activeTask = tasks.find(t => t.id === active.id)
-    const overTask   = tasks.find(t => t.id === over.id)
+    let overTask     = tasks.find(t => t.id === over.id)
     if (!activeTask || !overTask) return
 
-    // 親→子位置、子→親位置、異なる親への移動はすべて禁止
-    if (!activeTask.parent_id && overTask.parent_id) return
+    // 子→親位置への移動は禁止
     if (activeTask.parent_id && !overTask.parent_id) return
+    // 異なる親への移動は禁止
     if (activeTask.parent_id && overTask.parent_id &&
         activeTask.parent_id !== overTask.parent_id) return
+    // 親をドラッグ中に子の上に乗った場合、その子の親を over とみなす
+    if (!activeTask.parent_id && overTask.parent_id) {
+      const overParent = tasks.find(t => t.id === overTask.parent_id)
+      if (!overParent || overParent.id === activeTask.id) return
+      overTask = overParent
+    }
+    if (overTask.id === activeTask.id) return
 
     if (!activeTask.parent_id) {
       // ── 親タスク同士の並び替え ──
       const parents = tasks.filter(t => !t.parent_id)
       const fromIdx = parents.findIndex(t => t.id === active.id)
-      const toIdx   = parents.findIndex(t => t.id === over.id)
+      const toIdx   = parents.findIndex(t => t.id === overTask.id)
       const reordered = arrayMove(parents, fromIdx, toIdx).map((t, i) => ({ ...t, sort_order: i }))
       setTasks(prev => prev.map(t => reordered.find(r => r.id === t.id) || t))
       await Promise.all(reordered.map(t =>
@@ -783,7 +790,7 @@ export default function App() {
         .filter(t => t.parent_id === activeTask.parent_id)
         .sort((a, b) => a.sort_order - b.sort_order)
       const fromIdx = siblings.findIndex(t => t.id === active.id)
-      const toIdx   = siblings.findIndex(t => t.id === over.id)
+      const toIdx   = siblings.findIndex(t => t.id === overTask.id)
       const reordered = arrayMove(siblings, fromIdx, toIdx).map((t, i) => ({ ...t, sort_order: i }))
       setTasks(prev => prev.map(t => reordered.find(r => r.id === t.id) || t))
       await Promise.all(reordered.map(t =>
