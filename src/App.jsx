@@ -905,4 +905,158 @@ export default function App() {
   const sidePanelProps = {
     task: selectedTask, year, month,
     noteContent, hoursMap: currentHoursMap,
-    onSaveNote: saveN
+    onSaveNote: saveNote, onSaveHours: saveHours,
+  }
+
+  return (
+    <div className="app">
+      {/* ── ヘッダー ── */}
+      <header className="app-header">
+        {/* 月ナビ */}
+        <div className="month-nav">
+          <button className="nav-btn" onClick={prevMonth}>‹</button>
+          <button className="nav-btn month-label"
+            onClick={() => { setYear(today.getFullYear()); setMonth(today.getMonth()) }}>
+            {year}年 {MONTH_JP[month]}
+          </button>
+          <button className="nav-btn" onClick={nextMonth}>›</button>
+        </div>
+
+        {/* 検索バー */}
+        <div className="search-wrap">
+          <button className="search-icon-btn" onClick={triggerSearch} aria-label="検索">🔍</button>
+          <input
+            className="search-input"
+            type="search"
+            placeholder="タスク・メモを検索… (Enter)"
+            value={searchQuery}
+            onChange={e => { setSearchQuery(e.target.value); setSearchNoResults(false) }}
+            onKeyDown={e => {
+              if (e.key === 'Enter') triggerSearch()
+              if (e.key === 'Escape') { setSearchQuery(''); setSearchNoResults(false) }
+            }}
+          />
+          {searchQuery && (
+            <button className="search-clear"
+              onClick={() => { setSearchQuery(''); setSearchNoResults(false) }}
+              aria-label="検索クリア">✕</button>
+          )}
+          {searchNoResults && (
+            <div className="search-no-results">該当するタスクはありません</div>
+          )}
+        </div>
+
+        {/* 右ボタン群 */}
+        <div className="header-right">
+          {selectedTask && (
+            <button className="btn btn-ghost panel-btn"
+              onClick={() => setShowMobilePanel(p => !p)}>
+              {showMobilePanel ? '✕' : '📋'}
+            </button>
+          )}
+          <button
+            className={`icon-btn refresh-btn${refreshing ? ' refreshing' : ''}`}
+            onClick={() => loadData({ isRefresh: true })}
+            disabled={refreshing}
+            title="最新データに更新"
+            aria-label="更新"
+          >⟳</button>
+          {/* 子タスク追加: 親タスクが選択されているときのみ有効 */}
+          <button
+            className="btn btn-secondary"
+            onClick={() => {
+              if (selectedTask && !selectedTask.parent_id) {
+                setDialog({ parentId: selectedId })
+              }
+            }}
+            disabled={!selectedTask || !!selectedTask.parent_id}
+            title={
+              !selectedTask
+                ? '親タスクを選択してから押してください'
+                : selectedTask.parent_id
+                  ? '子タスクにはさらに子タスクを追加できません'
+                  : `「${selectedTask.name}」に子タスクを追加`
+            }
+          >
+            ＋ 子タスク追加
+          </button>
+          <button className="btn btn-primary" onClick={() => setDialog({})}>
+            ＋ タスク追加
+          </button>
+        </div>
+      </header>
+
+      {/* ── メイン ── */}
+      <div className="app-body">
+        <div className="gantt-area">
+          {error ? (
+            <div className="err-msg">
+              <strong>接続エラー:</strong> {error}
+              <br /><small>Supabase の接続情報・RLS 設定をご確認ください</small>
+            </div>
+          ) : loading ? (
+            <div className="loading"><span className="spin">⟳</span> 読み込み中…</div>
+          ) : (
+            <DndContext
+              sensors={sensors}
+              collisionDetection={closestCenter}
+              onDragEnd={handleDndEnd}
+            >
+              <GanttChart
+                tasks={monthVisibleTasks}
+                hasAnyTasks={tasks.length > 0}
+                year={year} month={month}
+                selectedId={selectedId}
+                onSelect={handleSelect}
+                onEdit={task => setDialog(task)}
+                allTasks={tasks}
+                collapsedIds={collapsedIds}
+                onToggleCollapse={toggleCollapse}
+              />
+            </DndContext>
+          )}
+        </div>
+
+        <aside className="side-panel" style={{ width: sideWidth }}>
+          <div
+            className="side-resizer"
+            onMouseDown={handleResizeStart}
+            onTouchStart={handleResizeStart}
+            title="ドラッグして幅を調整"
+          />
+          <SidePanel {...sidePanelProps} />
+        </aside>
+      </div>
+
+      {/* モバイルパネル */}
+      {showMobilePanel && selectedTask && (
+        <div className="mobile-panel">
+          <div className="mobile-panel-bar">
+            <span className="mobile-panel-title">{selectedTask.name}</span>
+            <button className="icon-btn" onClick={() => setShowMobilePanel(false)}>✕</button>
+          </div>
+          <div className="mobile-panel-body">
+            <SidePanel {...sidePanelProps} />
+          </div>
+        </div>
+      )}
+
+      {/* タスクダイアログ */}
+      {dialog !== null && (
+        <TaskDialog task={dialog} onSave={saveTask}
+          onDelete={deleteTask} onClose={() => setDialog(null)} />
+      )}
+
+      {/* 検索モーダル */}
+      {showSearchModal && (
+        <SearchModal
+          query={searchQuery}
+          results={searchResults}
+          notes={notes}
+          onJump={jumpToTask}
+          onClose={() => { setShowSearchModal(false); setSearchResults([]) }}
+        />
+      )}
+    </div>
+  )
+}
