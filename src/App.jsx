@@ -776,7 +776,7 @@ export default function App() {
 
     if (!activeTask.parent_id) {
       // ── 親タスク同士の並び替え ──
-      const parents = tasks.filter(t => !t.parent_id)
+      const parents = tasks.filter(t => !t.parent_id).sort((a, b) => a.sort_order - b.sort_order)
       const fromIdx = parents.findIndex(t => t.id === active.id)
       const toIdx   = parents.findIndex(t => t.id === overTask.id)
       const reordered = arrayMove(parents, fromIdx, toIdx).map((t, i) => ({ ...t, sort_order: i }))
@@ -1061,4 +1061,9 @@ export default function App() {
           results={searchResults}
           notes={notes}
           onJump={jumpToTask}
-          onClose={() => { setShowSearchModal(false); setSearchResults
+          onClose={() => { setShowSearchModal(false); setSearchResults([]) }}
+        />
+      )}
+    </div>
+  )
+}
